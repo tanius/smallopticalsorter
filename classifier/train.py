@@ -64,12 +64,13 @@ nb_validation_samples = 440 # TODO: Determine this by counting files in validati
 img_width, img_height = 150, 150
 
 # Number of iterations (epochs) when training the model.
-# Each epoch utilizes all training images and updates model weights once at its end.
+# Each epoch utilizes all training images once.
 epochs = 30
 
 # Number of training images to process in each step of each epoch.
-# Each epoch utilizes all training samples, so  batch_size * steps = nb_train_samples.
-batch_size = 32 # (Was 16 originally.)
+# Each epoch utilizes all training images, so  batch_size * steps = nb_train_samples. The model weights are updated
+# after each step of an epoch.
+batch_size = 16
 
 # Build the model as defined in model.py.
 model = create_model(img_width, img_height)
