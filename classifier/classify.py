@@ -53,8 +53,7 @@ if __name__=="__main__":
 
   # Create the neural network and load its weights.
   nn = create_model(target_size[0], target_size[1])
-  nn.load_weights('bean_classifier.h5')
+  nn.load_weights('classifier_weights.h5')
 
   preds = predict(nn, img, target_size)
   print(preds)
-
