@@ -65,11 +65,11 @@ img_width, img_height = 150, 150
 
 # Number of iterations (epochs) when training the model.
 # Each epoch utilizes all training images and updates model weights once at its end.
-epochs = 50
+epochs = 30
 
 # Number of training images to process in each step of each epoch.
 # Each epoch utilizes all training samples, so  batch_size * steps = nb_train_samples.
-batch_size = 16
+batch_size = 32 # (Was 16 originally.)
 
 # Build the model as defined in model.py.
 model = create_model(img_width, img_height)
