@@ -1,10 +1,11 @@
-"""This is example code to show how to use the bean classifier.
+#!/usr/bin/env python3
 
-Example runs:
+# Example code to show how to use the bean classifier.
+#
+# Example runs:
+#  python classify.py --image data/validation/good/Set04-good.10.35.png
+#  python classify.py --image data/validation/bad/Set05-bad.09.27.png
 
-  python classify.py --image data/validation/good/Set04-good.10.35.png
-  python classify.py --image data/validation/bad/Set05-bad.09.27.png
-"""
 import argparse
 import numpy as np
 import sys
