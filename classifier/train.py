@@ -1,40 +1,13 @@
-'''This script goes along the blog post
-"Building powerful image classification models using very little data"
-from blog.keras.io.
-It uses data that can be downloaded at:
-https://www.kaggle.com/c/dogs-vs-cats/data
-In our setup, we:
-- created a data/ folder
-- created train/ and validation/ subfolders inside data/
-- created cats/ and dogs/ subfolders inside train/ and validation/
-- put the cat pictures index 0-999 in data/train/cats
-- put the cat pictures index 1000-1400 in data/validation/cats
-- put the dogs pictures index 12500-13499 in data/train/dogs
-- put the dog pictures index 13500-13900 in data/validation/dogs
-So that we have 1000 training examples for each class, and 400 validation examples for each class.
-In summary, this is our directory structure:
-```
-data/
-    train/
-        dogs/
-            dog001.jpg
-            dog002.jpg
-            ...
-        cats/
-            cat001.jpg
-            cat002.jpg
-            ...
-    validation/
-        dogs/
-            dog001.jpg
-            dog002.jpg
-            ...
-        cats/
-            cat001.jpg
-            cat002.jpg
-            ...
-```
-'''
+#!/usr/bin/env python3
+
+# Train a convolutional neural network to recognize good and bad coffee beans.
+#
+# For documentation on setup and usage, see /docs/coffee_classifier.md .
+#
+# Source code structure follows along the tutorial "Building powerful image classification models
+# using very little data", see:
+# - https://blog.keras.io/building-powerful-image-classification-models-using-very-little-data.html
+# - https://gist.github.com/fchollet/0830affa1f7f19fd47b06d4cf89ed44d
 
 from keras.preprocessing.image import ImageDataGenerator
 from keras.models import Sequential
@@ -48,52 +21,63 @@ import numpy as np
 import tensorflow as tf
 import random as rn
 
-# The below is necessary in Python 3.2.3 onwards to
-# have reproducible behavior for certain hash-based operations.
-# See these references for further details:
+
+## (1) Ensure reproducible training results.
+#
+# Follows this FAQ entry (except that it keeps multi-threading in place for training performance reasons):
+# https://keras.io/getting-started/faq/#how-can-i-obtain-reproducible-results-using-keras-during-development
+
+# Make Python hash-based operations reproducible. See:
 # https://docs.python.org/3.4/using/cmdline.html#envvar-PYTHONHASHSEED
 # https://github.com/keras-team/keras/issues/2280#issuecomment-306959926
-
 import os
 os.environ['PYTHONHASHSEED'] = '0'
 
-# The below is necessary for starting Numpy generated random numbers
-# in a well-defined initial state.
-
+# Start Numpy generated random numbers from a well-defined initial state.
 np.random.seed(42)
 
-# The below is necessary for starting core Python generated random numbers
-# in a well-defined state.
-
+# Start core Python generated random numbers from a well-defined state.
 rn.seed(12345)
 
-# The below tf.set_random_seed() will make random number generation
-# in the TensorFlow backend have a well-defined initial state.
-# For further details, see: https://www.tensorflow.org/api_docs/python/tf/set_random_seed
+# Force TensorFlow to use single thread, as multiple ones are a source of non-reproducible results.
+# For details, see: https://stackoverflow.com/q/42022950
+session_conf = tf.ConfigProto(intra_op_parallelism_threads=1, inter_op_parallelism_threads=1)
 
+# Start Tensorflow generated random numbers from a well-defined initial state.
+# For details, see: https://www.tensorflow.org/api_docs/python/tf/set_random_seed
 tf.set_random_seed(1234)
 
-# -----
+# Activate the config built above (single thread, fixed random seed).
+sess = tf.Session(graph=tf.get_default_graph(), config=session_conf)
+K.set_session(sess)
 
 
-# dimensions of our images.
-img_width, img_height = 150, 150
+## (2) Set up and run the training.
 
+# Input data sources.
 train_data_dir = 'data/train'
 validation_data_dir = 'data/validation'
-nb_train_samples = 1367
-nb_validation_samples = 440
+nb_train_samples = 1367 # TODO: Determine this by counting files in train_data_dir.
+nb_validation_samples = 440 # TODO: Determine this by counting files in validation_data_dir.
 
+# Input image dimensions (scaled down from variable source sizes).
+img_width, img_height = 150, 150
+
+# Number of iterations (epochs) when training the model.
+# Each epoch utilizes all training images and updates model weights once at its end.
 epochs = 50
+
+# Number of training images to process in each step of each epoch.
+# Each epoch utilizes all training samples, so  batch_size * steps = nb_train_samples.
 batch_size = 16
 
+# Build the model as defined in model.py.
 model = create_model(img_width, img_height)
-
 model.compile(loss='binary_crossentropy',
               optimizer='rmsprop',
               metrics=['accuracy'])
 
-# this is the augmentation configuration we will use for training
+# Setup to generate validation images (augmentation used: multiple types).
 train_datagen = ImageDataGenerator(
     rescale=1. / 255,
     shear_range=0.2,
@@ -101,23 +85,21 @@ train_datagen = ImageDataGenerator(
     width_shift_range=0.2,
     height_shift_range=0.2,
     horizontal_flip=True)
-
-# this is the augmentation configuration we will use for testing:
-# only rescaling
-test_datagen = ImageDataGenerator(rescale=1. / 255)
-
 train_generator = train_datagen.flow_from_directory(
     train_data_dir,
     target_size=(img_width, img_height),
     batch_size=batch_size,
     class_mode='binary')
 
+# Setup to generate validation images (augmentation used: rescaling only).
+test_datagen = ImageDataGenerator(rescale=1. / 255)
 validation_generator = test_datagen.flow_from_directory(
     validation_data_dir,
     target_size=(img_width, img_height),
     batch_size=batch_size,
     class_mode='binary')
 
+# Actual training process.
 model.fit_generator(
     train_generator,
     steps_per_epoch=nb_train_samples // batch_size,
@@ -125,4 +107,6 @@ model.fit_generator(
     validation_data=validation_generator,
     validation_steps=nb_validation_samples // batch_size)
 
-model.save_weights('model.h5')
+# Save the training results to a file.
+model.save_weights('classifier_weights.current.h5')
+# TODO Save to classifier_weights.yyyy-mm-dd.nn.h5 based on the current date and a file count per day.
