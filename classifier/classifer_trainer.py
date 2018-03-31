@@ -49,8 +49,8 @@ img_width, img_height = 150, 150
 
 train_data_dir = 'data/train'
 validation_data_dir = 'data/validation'
-nb_train_samples = 1367
-nb_validation_samples = 440
+nb_train_samples = 1413
+nb_validation_samples = 582
 
 epochs = 50
 batch_size = 16
