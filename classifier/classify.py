@@ -1,10 +1,11 @@
-"""This is example code to show how to use the bean classifier.
+#!/usr/bin/env python3
 
-Example runs:
+# Example code to show how to use the bean classifier.
+#
+# Example runs:
+#  python classify.py --image data/validation/good/Set04-good.10.35.png
+#  python classify.py --image data/validation/bad/Set05-bad.09.27.png
 
-  python classify.py --image data/validation/good/Set04-good.10.35.png
-  python classify.py --image data/validation/bad/Set05-bad.09.27.png
-"""
 import argparse
 import numpy as np
 import sys
@@ -53,8 +54,7 @@ if __name__=="__main__":
 
   # Create the neural network and load its weights.
   nn = create_model(target_size[0], target_size[1])
-  nn.load_weights('bean_classifier.h5')
+  nn.load_weights('classifier_weights.h5')
 
   preds = predict(nn, img, target_size)
   print(preds)
-
