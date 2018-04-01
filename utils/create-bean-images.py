@@ -14,6 +14,7 @@ Options:
   --version                     Show version.
 
 """
+import os
 import cv2
 import numpy as np
 from docopt import docopt
@@ -21,6 +22,8 @@ from docopt import docopt
 
 #### SECTION 1: INPUT
 
+# Command line arguments as prepared by Docopt.
+# Reference: https://github.com/docopt/docopt
 arguments = docopt(__doc__, version='create-bean-images 0.1')
 # print(arguments)
 
@@ -31,8 +34,8 @@ resolution = float(arguments['--resolution']) # px/mm
 img_target_size = int(14.35 * resolution)
 
 filename = arguments['<file>']
-filename_beans_prefix = 'coffee.bean' # TODO Derive the proper prefix part from the input filename.
-filename_rois = filename + '.debug.jpg' # TODO: Better derived structure, without two file extensions inside.
+filename_beans_prefix = os.path.splitext(filename)[0] + '.'
+filename_debug = os.path.splitext(filename)[0] + '.debug.jpg'
 
 # Load the image.
 img = cv2.imread(filename)
@@ -52,7 +55,6 @@ if thresh_blocksize % 2 == 0: thresh_blocksize += 1
 img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
 # Smooth the image to avoid noises.
-# TODO Blur radius should be much higher (factor 200 for a 1200x1600 image), and adapted to the image size.
 img_gray = cv2.medianBlur(img_gray, 5)
 
 # Apply adaptive threshold.
@@ -74,9 +76,8 @@ for cnt in contours:
     # Draw a green bounding box around the contour.
     cv2.rectangle(img_bw, (x,y), (x+w, y+h), (0,255,0), 2)
 
-    # Skip fragments smaller than beans.
-    # TODO Adapt the pixel count threshold based on image dimensions.
-    if (h*w < 3000): continue
+    # Skip thresholding artifacts (anything smaller than 10 mm²).
+    if (h*w < 10 * resolution * resolution): continue
 
     # Grow the bounding box to img_target_size * img_target_size (where possible).
     center_x = x + w//2
@@ -94,11 +95,11 @@ for cnt in contours:
     # TODO If the bounding box is smaller than img_target_size * img_target_size, pad it.
 
     # Save the ROI as JPEG image. (Image format is chosen by extension. ".png" also works.)
-    # TODO Use a high quality value for the JPG.
-    cv2.imwrite(filename_beans_prefix + str(img_num).zfill(2) + ".jpg", roi)
+    # Reference: https://docs.opencv.org/3.4.0/d4/da8/group__imgcodecs.html#gabbc7ef1aa2edfaa87772f1202d67e0ce
+    cv2.imwrite(filename_beans_prefix + str(img_num).zfill(2) + ".jpg", roi, [cv2.IMWRITE_JPEG_QUALITY, 98])
     img_num += 1
 
 # Save the b&w image with bounding boxes as visual control.
 if arguments['--debug']:
-    cv2.imwrite(filename_rois, img_bw)
+    cv2.imwrite(filename_debug, img_bw)
     # TODO Also write the full-color image, with marked bounding boxes.
