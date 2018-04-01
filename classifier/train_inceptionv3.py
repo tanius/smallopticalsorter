@@ -2,6 +2,9 @@
 
 # Train a convolutional neural network to recognize good and bad coffee beans.
 #
+# Based on the InceptionV3 model and weights, with fine tuning following along "Fine-tune InceptionV3 on a new set of
+# classes" in https://keras.io/applications/#usage-examples-for-image-classification-models
+#
 # For documentation on setup and usage, see /docs/coffee_classifier.md .
 #
 # Source code structure follows along the tutorial "Building powerful image classification models
