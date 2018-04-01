@@ -35,7 +35,8 @@ img_target_size = int(14.35 * resolution)
 
 filename = arguments['<file>']
 filename_beans_prefix = os.path.splitext(filename)[0] + '.'
-filename_debug = os.path.splitext(filename)[0] + '.debug.jpg'
+filename_debug_bw = os.path.splitext(filename)[0] + '.debug1.jpg'
+filename_debug_rgb = os.path.splitext(filename)[0] + '.debug2.jpg'
 
 # Load the image.
 img = cv2.imread(filename)
@@ -66,15 +67,17 @@ img_bw = cv2.adaptiveThreshold(img_gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.TH
 contours = cv2.findContours(img_bw, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[1]
 
 # Convert the image from gray to color mode, so we can draw in color on it later.
-img_bw = cv2.cvtColor(img_bw, cv2.COLOR_GRAY2BGR)
+img_debug_bw = cv2.cvtColor(img_bw, cv2.COLOR_GRAY2BGR)
+img_debug_rgb = img.copy()
 
 # For each contour, find the bounding box, draw it, save it.
 img_num = 1
 for cnt in contours:
     x,y,w,h = cv2.boundingRect(cnt)
 
-    # Draw a green bounding box around the contour.
-    cv2.rectangle(img_bw, (x,y), (x+w, y+h), (0,255,0), 2)
+    # Draw a green bounding box around the contour (in both original and b&w versions).
+    cv2.rectangle(img_debug_bw, (x,y), (x+w, y+h), (0,255,0), 2)
+    cv2.rectangle(img_debug_rgb, (x,y), (x+w, y+h), (0,255,0), 2)
 
     # Skip thresholding artifacts (anything smaller than 10 mm²).
     if (h*w < 10 * resolution * resolution): continue
@@ -92,7 +95,19 @@ for cnt in contours:
     # Extract the bounding box content ("region of interest", hopefully a bean)
     roi = img[y:y+h, x:x+w]
 
-    # TODO If the bounding box is smaller than img_target_size * img_target_size, pad it.
+    # Pad the bounding box to img_target_size * img_target_size, if needed.
+    if h < img_target_size or w < img_target_size:
+        # Make a 3-channel canvas in targeted size.
+        roi_canvas = np.zeros([img_target_size, img_target_size, 3], dtype=np.uint8)
+        # Fill image with white = (255,255,255).
+        roi_canvas.fill(255)
+
+        # Mount ROI input image centered on the canvas.
+        h_offset = (img_target_size - h) // 2
+        w_offset = (img_target_size - w) // 2
+        roi_canvas[h_offset:h_offset+h, w_offset:w_offset+w] = roi
+
+        roi = roi_canvas
 
     # Save the ROI as JPEG image. (Image format is chosen by extension. ".png" also works.)
     # Reference: https://docs.opencv.org/3.4.0/d4/da8/group__imgcodecs.html#gabbc7ef1aa2edfaa87772f1202d67e0ce
@@ -101,5 +116,5 @@ for cnt in contours:
 
 # Save the b&w image with bounding boxes as visual control.
 if arguments['--debug']:
-    cv2.imwrite(filename_debug, img_bw)
-    # TODO Also write the full-color image, with marked bounding boxes.
+    cv2.imwrite(filename_debug_bw, img_debug_bw)
+    cv2.imwrite(filename_debug_rgb, img_debug_rgb)
