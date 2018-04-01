@@ -5,4 +5,4 @@ jupyter-console==5.2.0
 jupyter-core==4.4.0
 jupyter==1.0.0
 opencv-python==3.4.0.12
-
+docopt==0.6.2
