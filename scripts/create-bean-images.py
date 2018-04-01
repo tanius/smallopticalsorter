@@ -1,20 +1,52 @@
+#!/usr/bin/env python3
+
+"""create-bean-images
+
+Usage:
+  create-bean-images.py --resolution=<res> [--debug] <file>
+  create-bean-images.py (-h | --help)
+  create-bean-images.py --version
+
+Options:
+  -r <res>, --resolution=<res>  Image file resolution in px/mm.
+  -d, --debug                   Also write an image showing the applied thresholding and recognized objects.
+  -h, --help                    Show this screen.
+  --version                     Show version.
+
+"""
 import cv2
 import numpy as np
+from docopt import docopt
 
-## Configuration sectionself.
-resolution = 8.0 # px/mm
 
-img_width  = 1200
-img_height = 1600
-# TODO Determine the image dimensions from the given image.
+#### SECTION 1: INPUT
+
+arguments = docopt(__doc__, version='create-bean-images 0.1')
+# print(arguments)
+
+resolution = float(arguments['--resolution']) # px/mm
 
 # Output image width and height.
 # (Output images should cover a physical size of 14.35*14.35 mm always.)
 img_target_size = int(14.35 * resolution)
 
+filename = arguments['<file>']
+filename_beans_prefix = 'coffee.bean' # TODO Derive the proper prefix part from the input filename.
+filename_rois = filename + '.debug.jpg' # TODO: Better derived structure, without two file extensions inside.
+
 # Load the image.
-# TODO Pass image filename from command line.
-img = cv2.imread('coffee.jpg')
+img = cv2.imread(filename)
+
+# Determine the image dimensions.
+img_height, img_width  = img.shape[:2]
+# print("DEBUG: img_height = ", img_height, ", img_width =  ", img_width)
+
+# Block size for OpenCV adaptive thresholding. (Must be an uneven number.)
+thresh_blocksize = int( max(img_height, img_width) * 0.25 )
+if thresh_blocksize % 2 == 0: thresh_blocksize += 1
+
+
+#### SECTION 2: IMAGE PROCESSING
 
 # Convert to grayscale.
 img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -25,8 +57,7 @@ img_gray = cv2.medianBlur(img_gray, 5)
 
 # Apply adaptive threshold.
 # Reference: https://docs.opencv.org/3.4.0/d7/d1b/group__imgproc__misc.html#ga72b913f352e4a1b1b397736707afcde3
-# TODO Calculate the adaptiveThreshold blocksize parameter as 25% of larger side of image.
-img_bw = cv2.adaptiveThreshold(img_gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 401, 0)
+img_bw = cv2.adaptiveThreshold(img_gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, thresh_blocksize, 0)
 
 # Find the contours.
 # Reference: https://docs.opencv.org/3.4.0/d3/dc0/group__imgproc__shape.html#ga17ed9f5d79ae97bd4c7cf18403e1689a
@@ -47,7 +78,7 @@ for cnt in contours:
     # TODO Adapt the pixel count threshold based on image dimensions.
     if (h*w < 3000): continue
 
-    # TODO Grow the bounding box to a square of the right (resolution dependent) "standard size".
+    # Grow the bounding box to img_target_size * img_target_size (where possible).
     center_x = x + w//2
     center_y = y + h//2
     x = max(center_x - (img_target_size//2), 0)
@@ -60,13 +91,14 @@ for cnt in contours:
     # Extract the bounding box content ("region of interest", hopefully a bean)
     roi = img[y:y+h, x:x+w]
 
-    # TODO If the bounding box is smaller than the "standard size", pad it with white background.
+    # TODO If the bounding box is smaller than img_target_size * img_target_size, pad it.
 
-    # Save the ROI as image.
-    # TODO Derive the output file names from input file names.
-    cv2.imwrite("bean_" + str(img_num).zfill(2) + ".png", roi)
+    # Save the ROI as JPEG image. (Image format is chosen by extension. ".png" also works.)
+    # TODO Use a high quality value for the JPG.
+    cv2.imwrite(filename_beans_prefix + str(img_num).zfill(2) + ".jpg", roi)
     img_num += 1
 
 # Save the b&w image with bounding boxes as visual control.
-# TODO Only do this when required by a --debug command line argument.
-cv2.imwrite('coffee.rois.png', img_bw)
+if arguments['--debug']:
+    cv2.imwrite(filename_rois, img_bw)
+    # TODO Also write the full-color image, with marked bounding boxes.
