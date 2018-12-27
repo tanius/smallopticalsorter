@@ -3,9 +3,9 @@
 """create-bean-images
 
 Usage:
-  create-bean-images.py --resolution=<res> [--debug] <file>
-  create-bean-images.py (-h | --help)
-  create-bean-images.py --version
+  prepare-beans.py --resolution=<res> [--debug] <file>
+  prepare-beans.py (-h | --help)
+  prepare-beans.py --version
 
 Options:
   -r <res>, --resolution=<res>  Image file resolution in px/mm.
@@ -114,7 +114,7 @@ for cnt in contours:
     cv2.imwrite(filename_beans_prefix + str(img_num).zfill(2) + ".jpg", roi, [cv2.IMWRITE_JPEG_QUALITY, 98])
     img_num += 1
 
-# Save the b&w image with bounding boxes as visual control.
+# Save images for visual debugging (bounding boxes and thresholding).
 if arguments['--debug']:
     cv2.imwrite(filename_debug_bw, img_debug_bw)
     cv2.imwrite(filename_debug_rgb, img_debug_rgb)
