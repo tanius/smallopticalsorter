@@ -1,20 +1,17 @@
 import cadquery as cq
+from cadquery import selectors
 import logging
 from math import sqrt, asin, degrees
 
 # TODOS FOR NOW
 #
-# @todo Add a parametric mounting bracket to the wall. 
-#   Proposal: Add 3-4 studs that have a captured nut inserted from the top near the end, allowing them to be bolted to 
-#   the machine wall. That uses little material and, when in a triangle arrangement and with brackets stabilizing the studs, 
-#   is quite tough. It can also nivellate the different wall distances of the chute along its length.
-#   Proposal: Draw the bracket as part of the profiles and then be extruded together with the chute shape.
 # @todo Adapt the depth calculation. Currently, the part in front of the tip protrudes over the specified depth.
 
 # TODOS FOR LATER
 #
 # @todo Use an elliptical arc instead of a circular arc. That allows deep chutes and also avoids the problem of 
 #   arcs being more than a half circle sometimes. See: https://cadquery.readthedocs.io/en/latest/classreference.html#cadquery.Workplane.ellipseArc
+#   Or even better, use a spline: https://github.com/CadQuery/cadquery/issues/318#issuecomment-612860937
 # @todo Rotate the part 180° around z. Because parts should be created in their natural orientation to be well re-usable.
 # @todo If necessary, cut off the upper chute end somewhat (but not vertically down, that would be too much).
 # @todo If necessary, add that a width (x axis) offset of the output can be configured.
@@ -91,6 +88,27 @@ def uProfile(self, w, straight_h, rounded_h, wall_thickness):
     return profile
 
 
+def stud(radius, base_plane, cut_plane):
+    """
+    Create a cylinder vertically in the origin of plane_1 and cut by plane_2. This allows to create connectors between 
+    a case wall and any face of a part.
+    :radius: Radius of the studding cylinder.
+    :param: base_plane  The base plane, with its origin where the stud should be created and its normal vector pointing towards 
+    cut_plane.
+    :param: cut_plane  The plane to cut the studding cylinder.
+    """
+    stud = (
+        cq.Workplane("XY")
+        .copyWorkplane(base_plane)
+        .circle(radius)
+        .extrude(500) # @todo: Limit this to approx. the distance to face_plane.
+        .copyWorkplane(cut_plane)
+        .split(keepTop = True)
+    )
+    # show_object(stud, name = "stud DEBUG HELPER", options = {"color": "red", "alpha": 0})
+    return stud
+
+
 def chute(h, d, wall_thickness, upper_w, lower_w, lower_straight_wall_h, lower_rounded_wall_h, upper_straight_wall_h, upper_rounded_wall_h):
     """
     Create a chute from parametric upper and lower profiles.
@@ -131,18 +149,35 @@ def chute(h, d, wall_thickness, upper_w, lower_w, lower_straight_wall_h, lower_r
     upper_profile = cq.Workplane("XY").transformed(offset = (0,0,slide_length)).uProfile(
         w = upper_w, straight_h = upper_straight_wall_h, rounded_h = upper_rounded_wall_h, wall_thickness = wall_thickness
     )
-    chute = cq.Workplane("XY")
+    chute = cq.Workplane("XY").tag("baseplane")
     chute.ctx.pendingWires.extend(lower_profile.ctx.pendingWires)
     chute.ctx.pendingWires.extend(upper_profile.ctx.pendingWires)
     chute = chute.loft(combine = True)
     
-    # Rotate the chute as needed.
-    chute = chute.rotate((-1,0,0), (1,0,0), -(90 - slide_angle))
+    # Attach studs to a side face, to allow mounting to a wall or case.
+    # @todo Mount studs to the side of the object. How to: (1) Create the stud in xy direction, (2) cut the stud with a 
+    #   workplane created from chute.faces("<X") and keep one half, (3) union both objects together.
+    # @todo Move the stud creation code into its own plugin.
+    # @todo Give the studs a proper shape. Use 3-4 studs that have a captured nut inserted from the top near the end, allowing them 
+    #   to be bolted to the machine wall. That uses little material and, when in a triangle arrangement and with brackets 
+    #   stabilizing the studs, is quite tough. It can also nivellate the different wall distances of the chute along its length.
+    #
+    left_face_plane = chute.faces("<X").workplane()
+    right_face_plane = chute.faces("<X").workplane()
+    left_case_plane = cq.Workplane("YZ").workplane(offset = -35)
+    right_case_plane = cq.Workplane("YZ").workplane(offset = 35)
+    # show_object(left_face_plane.box(100, 100, 1), name = "DEBUG HELPER", options = {"color": "blue", "alpha": 0.9})
+    stud_1 = stud(radius = 4, base_plane = left_case_plane.center(7, 53), cut_plane = left_face_plane)
+    stud_2 = stud(radius = 4, base_plane = left_case_plane.center(7, 25), cut_plane = left_face_plane)
+    chute = chute.union(stud_1, glue = True).union(stud_2, glue = True)
     
-    # Cut off the lower chute end horizontally.
-    # output_shape width and depth is generous to cut off a widening chute properly.
-    output_shape = cq.Workplane("XY").box(lower_w * 4, d * 4, h).translate((0,0,-h/2))
-    chute = chute.cut(output_shape)
+    # Rotate the chute as needed.
+    #chute = chute.rotate((-1,0,0), (1,0,0), -(90 - slide_angle))
+    
+    # Cut off the lower chute end horizontally (along the XY plane).
+    #   Workplanes are not rotated when rotating the object, so we can use the original baseplane without needing a 
+    #   Workplane::transformed(rotate = (…)).
+    chute = chute.workplaneFromTagged("baseplane").split(keepTop = True)
 
     return chute
 
@@ -155,8 +190,10 @@ def chute(h, d, wall_thickness, upper_w, lower_w, lower_straight_wall_h, lower_r
 chute = chute(
     h = 50.0, d = 35.0, wall_thickness = 2, 
     upper_w = 50.0, upper_straight_wall_h = 30, upper_rounded_wall_h = 0,
-    lower_w = 24.0, lower_straight_wall_h = 2.05, lower_rounded_wall_h = 10,
+    lower_w = 24.0, lower_straight_wall_h = 2.05, lower_rounded_wall_h = 10
 )
+
+show_object(chute, name = "chute", options = {"color": "blue", "alpha": 0})
 
 
 # =============================================================================
@@ -164,9 +201,7 @@ chute = chute(
 # =============================================================================
 
 # Debug helper code (displaying profiles instead of the chute).
-#
-#cq.Workplane.uProfile = uProfile
-# measure_element = (cq.Workplane("XY").box(24, 24, 1).translate((0,0,-1.5)))
+# cq.Workplane.uProfile = uProfile
 # chute_profile = (cq
 #     .Workplane("XY")
 #     .uProfile(w = 24, straight_h = 2.0, rounded_h = 10, wall_thickness = 2)
