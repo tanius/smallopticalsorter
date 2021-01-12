@@ -5,13 +5,15 @@ from math import sqrt, asin, degrees
 
 # TODOS FOR NOW
 #
-# @todo Give the studs a proper shape. Use 3-4 studs that have a captured nut inserted from the top near the end, allowing them 
-#   to be bolted to the machine wall. That uses little material and, when in a triangle arrangement and with brackets 
-#   stabilizing the studs, is quite tough. It can also nivellate the different wall distances of the chute along its length.
-# @todo Adapt the depth calculation. Currently, the part in front of the tip protrudes over the specified depth.
+# @todo Implement that the studs can have a conical widening at the end, to create a more sturdy wall mount.
+# @todo Add fillets where the studs connect to the chute.
+# @todo Implement that the studs can have a captured nut inserted from the top near the end, allowing them 
+#   to be bolted to the machine wall.
+# @todo Correct the depth calculation. Currently, the part in front of the tip protrudes over the specified depth.
 
 # TODOS FOR LATER
 #
+# @todo Refactor the code into a class.
 # @todo Use an elliptical arc instead of a circular arc. That allows deep chutes and also avoids the problem of 
 #   arcs being more than a half circle sometimes. See: https://cadquery.readthedocs.io/en/latest/classreference.html#cadquery.Workplane.ellipseArc
 #   Or even better, use a spline: https://github.com/CadQuery/cadquery/issues/318#issuecomment-612860937
@@ -31,8 +33,13 @@ from math import sqrt, asin, degrees
 # Reusable Code
 # =============================================================================
 
-# Arcs cannot be straight lines, so we have to catch that case.
 def sagittaArcOrLine(self, endPoint, sag):
+    """
+    An arc that can also be a straight line, unlike with the CadQuery core Workplane.sagittaArc().
+    :param: endPoint  End point for the arc. A 2-tuple, in workplane coordinates.
+    :param: sag  Sagitta of the arc, or zero to get a straight line. A float, indicating the 
+      perpendicular distance from arc center to arc baseline.
+    """
     if sag == 0:
         return self.lineTo(endPoint[0], endPoint[1])
     else:
@@ -110,21 +117,47 @@ def stud(radius, base_plane, cut_plane):
         cq.Workplane("XY")
         .copyWorkplane(base_plane)
         .circle(radius)
-        .extrude(500) # @todo: Limit this to approx. the distance to face_plane.
+        .extrude(500) # @todo: Limit this to approx. the distance to cut_plane.
         .copyWorkplane(cut_plane)
-        .split(keepTop = True)
+        .split(keepTop = True) # "Top" means positive z values in cut_planes local coordinates.
     )
     # show_object(stud, name = "stud DEBUG HELPER", options = {"color": "red", "alpha": 0})
     return stud
 
 
-def chute(h, d, wall_thickness, upper_w, lower_w, lower_straight_wall_h, lower_rounded_wall_h, upper_straight_wall_h, upper_rounded_wall_h):
+# =============================================================================
+# Chute implementation
+# =============================================================================
+
+def chute(h, d, wall_thickness, 
+          upper_w, lower_w, lower_straight_wall_h, lower_rounded_wall_h, upper_straight_wall_h, upper_rounded_wall_h,
+          left_studs, left_wall_distance, right_studs, right_wall_distance
+    ):
     """
-    Create a chute from parametric upper and lower profiles.
+    Create a chute from parametric upper and lower profiles, which can be rounded or square U-profiles.
     
     Note that currently, the method will fail if any *_straight_wall_h is not at least 0.05 larger than wall_thickness. This is 
     because the system will consider such wires as incompatible for lofting. Error message: 
     "BRepCompatibleWires: SameNumberByPolarMethod failed".
+    
+    :param: h  Height of the chute in total, in its rotated position.
+    :param: d  Depth of the chute in total, in its rotated position.
+    :param: wall_thickness  Wall thickness of the chute's side walls, measured vertically to the wall.
+    :param: upper_w  Outer width of the chute at its input.
+    :param: lower_w  Outer width of the chute at its output.
+    :param: lower_straight_wall_h  Height of the straight part of the chute's lower U profile's side walls, measured vertically 
+      for a horizontal chute (means, before rotation). Must be at least wall_thickness, because that is the height of a 
+      flat sheet of the given wall_thickness. If less, it is automatically treated as if wall_thickness was given.
+    :param: lower_rounded_wall_h  Height of the rounded part of the chute's lower U profile's side walls, measured vertically 
+      for a horizontal chute (means, before rotation).
+    :param: upper_straight_wall_h  Like lower_straight_wall_h, but for the upper U profile.
+    :param: upper_rounded_wall_h  Like lower_rounded_wall_h, but for the upper U profile.
+    :param: left_studs  Positions of stud mounts on the chute's left side face, given as a list of tuples. Each tuple 
+       defines the x and y position of one stud, with x measured from the edge along the chute opening and y measured from 
+       the bottom tip, both for the unrotated chute in a vertical position.
+    :param: left_wall_distance Gap between the chute and the left wall to which to mount it, at the narrowest point.
+    :param: right_studs  Positions of stud mounts on the chute's left side face. See left_studs for the format.
+    :param: right_wall_distance Gap between the chute and the right wall to which to mount it, at the narrowest point.
     """
     # @todo Check for the error condition mentioned in the function docstring, and correct it automatically, with a hint 
     #   to the user.
@@ -132,6 +165,11 @@ def chute(h, d, wall_thickness, upper_w, lower_w, lower_straight_wall_h, lower_r
     cq.Workplane.uProfile = uProfile
     slide_length = sqrt(d*d + h*h)
     slide_angle = degrees(asin(h / slide_length)) # Drop angle at entry to the chute, same as exit angle.
+    
+    # Adjust the wall mount distances to count from the center plane.
+    w = max(upper_w, lower_w)
+    left_wall_distance = left_wall_distance + w / 2
+    right_wall_distance = right_wall_distance + w / 2
     
     # Create wires for the lower and upper profile independently, while no other pending wire is present. Because offset2D() 
     # used in uProfile() will affect all pending wires at the same time. See: https://github.com/CadQuery/cadquery/issues/570
@@ -148,15 +186,18 @@ def chute(h, d, wall_thickness, upper_w, lower_w, lower_straight_wall_h, lower_r
     # Create the basic chute solid.
     chute = chute.loft(combine = True)
     
-    # Attach studs to a side face, to allow mounting to a wall or case.
+    # Attach studs to the side faces, to allow mounting to a wall or case.
+    left_case_plane = cq.Workplane("YZ").workplane(offset = -left_wall_distance)
     left_face_plane = chute.faces("<X").workplane()
-    right_face_plane = chute.faces("<X").workplane()
-    left_case_plane = cq.Workplane("YZ").workplane(offset = -35)
-    right_case_plane = cq.Workplane("YZ").workplane(offset = 35)
-    # show_object(left_face_plane.box(100, 100, 1), name = "DEBUG HELPER", options = {"color": "blue", "alpha": 0.9})
-    stud_1 = stud(radius = 4, base_plane = left_case_plane.center(-7, 53), cut_plane = left_face_plane)
-    stud_2 = stud(radius = 4, base_plane = left_case_plane.center(-7, 25), cut_plane = left_face_plane)
-    chute = chute.union(stud_1, glue = True).union(stud_2, glue = True)
+    for stud_pos in left_studs:
+        a_stud = stud(radius = 4, base_plane = left_case_plane.center(-stud_pos[0], stud_pos[1]), cut_plane = left_face_plane)
+        chute = chute.union(a_stud, glue = True)
+    # Note that workplane offsets are in the workplane's local z coordinates, which are reversed by invert = True.
+    right_case_plane = cq.Workplane("YZ").workplane(offset = -right_wall_distance, invert = True)
+    right_face_plane = chute.faces(">X").workplane()
+    for stud_pos in right_studs:
+        a_stud = stud(radius = 4, base_plane = right_case_plane.center(-stud_pos[0], -stud_pos[1]), cut_plane = right_face_plane)
+        chute = chute.union(a_stud, glue = True)
     
     # Rotate the chute as needed.
     chute = chute.rotate((-1,0,0), (1,0,0), 90 - slide_angle)
@@ -189,7 +230,9 @@ def chute(h, d, wall_thickness, upper_w, lower_w, lower_straight_wall_h, lower_r
 chute = chute(
     h = 50.0, d = 35.0, wall_thickness = 2, 
     upper_w = 50.0, upper_straight_wall_h = 30, upper_rounded_wall_h = 0,
-    lower_w = 24.0, lower_straight_wall_h = 2.05, lower_rounded_wall_h = 10
+    lower_w = 24.0, lower_straight_wall_h = 2.05, lower_rounded_wall_h = 10,
+    left_studs = ((7, 53), (7, 25)), left_wall_distance = 5, 
+    right_studs = ((7, 53), (7, 25)), right_wall_distance = 5
 )
 
 show_object(chute, name = "chute", options = {"color": "blue", "alpha": 0})
