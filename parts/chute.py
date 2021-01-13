@@ -2,18 +2,34 @@ import cadquery as cq
 from cadquery import selectors
 import logging
 from math import sqrt, asin, degrees
+import importlib
+
+# Local directory imports.
+
+# Selective reloading to pick up changes made between script executions.
+# See: https://github.com/CadQuery/CQ-editor/issues/99#issue-525367146
+import utilities
+import fdm_stud
+importlib.reload(utilities)
+importlib.reload(fdm_stud)
+
+# In addition to importing the whole packages to be accessible by importlib.reload(), import some names.
+from utilities import sagittaArcOrLine, uProfile
+from fdm_stud import fdmStud
 
 # TODOS FOR NOW
 #
-# @todo Implement that the studs can have a conical widening at the end, to create a more sturdy wall mount.
-# @todo Add fillets where the studs connect to the chute.
+# @todo Refactor the code into a class.
 # @todo Implement that the studs can have a captured nut inserted from the top near the end, allowing them 
 #   to be bolted to the machine wall.
+# @todo Create stud extension parts (basically just cylinders with a conical widening at the end and a hole for a 
+#   bolt going through them, here to be configured for M4.) Because studs with support for 3D printing can only be short.
 # @todo Correct the depth calculation. Currently, the part in front of the tip protrudes over the specified depth.
 
 # TODOS FOR LATER
 #
-# @todo Refactor the code into a class.
+# @todo Add chamfers where the studs connect to the chute. (Better than fillets, as they are 3D printable.)
+# @todo Make the stud supports for FDM 3D printing optional.
 # @todo Use an elliptical arc instead of a circular arc. That allows deep chutes and also avoids the problem of 
 #   arcs being more than a half circle sometimes. See: https://cadquery.readthedocs.io/en/latest/classreference.html#cadquery.Workplane.ellipseArc
 #   Or even better, use a spline: https://github.com/CadQuery/cadquery/issues/318#issuecomment-612860937
@@ -32,77 +48,6 @@ from math import sqrt, asin, degrees
 # =============================================================================
 # Reusable Code
 # =============================================================================
-
-def sagittaArcOrLine(self, endPoint, sag):
-    """
-    An arc that can also be a straight line, unlike with the CadQuery core Workplane.sagittaArc().
-    :param: endPoint  End point for the arc. A 2-tuple, in workplane coordinates.
-    :param: sag  Sagitta of the arc, or zero to get a straight line. A float, indicating the 
-      perpendicular distance from arc center to arc baseline.
-    """
-    if sag == 0:
-        return self.lineTo(endPoint[0], endPoint[1])
-    else:
-        return self.sagittaArc(endPoint, sag)
-
-
-def uProfile(self, w, straight_h, rounded_h, wall_thickness):
-    """
-    A configurable U-shaped profile that can be rounded or flat at the bottom, open to +y.
-    :param: w  The width of the profile, measured between the outside of its two parallel legs.
-    :param: straight_h  Straight part of the wall height. Must be at least wall_thickness, as that is the height of a flat 
-      sheet. If it is less, it is automatically corrected to wall_thickness.
-    :param: rounded_h  Rounded portion of the wall height, measured as the arc height of convex curvature on the inside.
-    :param: wall_thickness  The part wall thickness when measured orthogonal to the wall.
-    """
-        
-    cq.Workplane.sagittaArcOrLine = sagittaArcOrLine
-
-    # To create a non-zero but negligible surface, as offset2D() can't work with pure lines.
-    nothing = 0.01
-    
-    # Automatically correct straight_h if needed, as the object is always at least as high as a flat sheet. Also, we have to 
-    # make it a tiny bit larger than wall_thickness or else vLine() would trip because it gets a zero as argument.
-    if straight_h <= wall_thickness: 
-        straight_h = wall_thickness + nothing
-
-    # Outside outline.
-    #   Draw the wall centerline. Mirroring half the line does not simplify 
-    #   anything as it complicated drawing the arc.
-    profile = (self
-        # Start position is the centerline of a wall_thickness thick, flat sheet touching the x axis.
-        .move(- w / 2 + wall_thickness / 2, - wall_thickness / 2)
-        # First straight wall. A straight_h value of just wall_thickness is a flat sheet, so draw no vertical walls in that case.
-        .vLine(-straight_h + wall_thickness)
-        # Without straight wall parts, the arc endpoint starts on the centerline of a flat sheet, so "- wall_thickness / 2".
-        .sagittaArcOrLine(
-            endPoint = (w / 2 - wall_thickness / 2, -straight_h + wall_thickness / 2), 
-            sag = -rounded_h
-        )
-        # Second straight wall, drawn in the opposite direction as the first. See above.
-        .vLine(straight_h - wall_thickness)
-    )
-
-    # Inside outline.
-    #   Draw in parallel to the centerline but in the other direction, to create a very thin U profile. Because offset2D() 
-    #   cannot deal with zero-width shapes yet due to a bug. See: https://github.com/CadQuery/cadquery/issues/508
-    #   @todo Get the bug mentioned above fixed.
-    profile = (profile
-        .hLine(-nothing)
-        .vLine(-straight_h + wall_thickness)
-        .sagittaArcOrLine(
-            endPoint = (- w / 2 + wall_thickness / 2 + nothing, -straight_h + wall_thickness / 2 - nothing), 
-            sag = rounded_h
-        )
-        .vLine(straight_h - wall_thickness)
-        .close()
-    )
-    
-    # Offset to create a shape in wall_thickness and with rounded edges.
-    profile = profile.offset2D(wall_thickness / 2, "arc")
-    
-    return profile
-
 
 def stud(radius, base_plane, cut_plane):
     """
@@ -135,6 +80,10 @@ def chute(h, d, wall_thickness,
     ):
     """
     Create a chute from parametric upper and lower profiles, which can be rounded or square U-profiles.
+    
+    The chute is optimized for support-less FDM 3D printing upside-down, since the top end is not cut at an angle and suitable 
+    as a standing surface. That also is a suitable orientation to get a strong part. The horizontal mounting studs come 
+    with 45° integrated supports for 3D printing.
     
     Note that currently, the method will fail if any *_straight_wall_h is not at least 0.05 larger than wall_thickness. This is 
     because the system will consider such wires as incompatible for lofting. Error message: 
@@ -186,19 +135,35 @@ def chute(h, d, wall_thickness,
     # Create the basic chute solid.
     chute = chute.loft(combine = True)
     
-    # Attach studs to the side faces, to allow mounting to a wall or case.
+    # Attach wall mount studs to the left side face.
     left_case_plane = cq.Workplane("YZ").workplane(offset = -left_wall_distance)
     left_face_plane = chute.faces("<X").workplane()
     for stud_pos in left_studs:
-        a_stud = stud(radius = 4, base_plane = left_case_plane.center(-stud_pos[0], stud_pos[1]), cut_plane = left_face_plane)
+        a_stud = (
+            left_case_plane
+            .center(-stud_pos[0], stud_pos[1])
+            .transformed(rotate = (0,0,180))
+            .fdmStud(radius = 4, height = left_wall_distance + w)
+            .copyWorkplane(left_face_plane)
+            .split(keepTop = True)
+        )
         chute = chute.union(a_stud, glue = True)
+    
+    # Attach wall mount studs to the right side face.
     # Note that workplane offsets are in the workplane's local z coordinates, which are reversed by invert = True.
     right_case_plane = cq.Workplane("YZ").workplane(offset = -right_wall_distance, invert = True)
     right_face_plane = chute.faces(">X").workplane()
-    for stud_pos in right_studs:
-        a_stud = stud(radius = 4, base_plane = right_case_plane.center(-stud_pos[0], -stud_pos[1]), cut_plane = right_face_plane)
+    for stud_pos in left_studs:
+        #a_stud = stud(radius = 4, base_plane = left_case_plane.center(-stud_pos[0], stud_pos[1]), cut_plane = left_face_plane)
+        a_stud = (
+            right_case_plane
+            .center(-stud_pos[0], -stud_pos[1])
+            .fdmStud(radius = 4, height = right_wall_distance + w)
+            .copyWorkplane(right_face_plane)
+            .split(keepTop = True)
+        )
         chute = chute.union(a_stud, glue = True)
-    
+
     # Rotate the chute as needed.
     chute = chute.rotate((-1,0,0), (1,0,0), 90 - slide_angle)
     
@@ -226,6 +191,8 @@ def chute(h, d, wall_thickness,
 # =============================================================================
 # Part Creation
 # =============================================================================
+
+cq.Workplane.fdmStud = fdmStud
 
 chute = chute(
     h = 50.0, d = 35.0, wall_thickness = 2, 
