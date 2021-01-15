@@ -2,4 +2,4 @@
 __pycache__
 
 # Ignore lossless versions of the training images for size reasons for now (>600 MiB).
-/training-data-png-IGNORED/
+/classifier-trainingdata-png-IGNORED/
