@@ -22,6 +22,7 @@ from fdm_stud import fdmStud
 # @todo Refactor the code into a class.
 # @todo Implement that the studs can have a captured nut inserted from the top near the end, allowing them 
 #   to be bolted to the machine wall.
+# @todo Implement that a stud will not get a support bracket when flush with the input, i.e. the print bed in 3D printing.
 # @todo Create stud extension parts (basically just cylinders with a conical widening at the end and a hole for a 
 #   bolt going through them, here to be configured for M4.) Because studs with support for 3D printing can only be short.
 # @todo Correct the depth calculation. Currently, the part in front of the tip protrudes over the specified depth.
@@ -43,31 +44,6 @@ from fdm_stud import fdmStud
 # @todo Support different widths at the front and back of the profile. That allows to visually correct that cutting 
 #   a longitudinally widening chute at a non-orthogonal angle will create a shape where the side walls are narrower 
 #   together at the front of the chute because that portion at the tip of the chute comes from a different length.
-
-
-# =============================================================================
-# Reusable Code
-# =============================================================================
-
-def stud(radius, base_plane, cut_plane):
-    """
-    Create a cylinder vertically in the origin of plane_1 and cut by plane_2. This allows to create connectors between 
-    a case wall and any face of a part.
-    :radius: Radius of the studding cylinder.
-    :param: base_plane  The base plane, with its origin where the stud should be created and its normal vector pointing towards 
-    cut_plane.
-    :param: cut_plane  The plane to cut the studding cylinder.
-    """
-    stud = (
-        cq.Workplane("XY")
-        .copyWorkplane(base_plane)
-        .circle(radius)
-        .extrude(500) # @todo: Limit this to approx. the distance to cut_plane.
-        .copyWorkplane(cut_plane)
-        .split(keepTop = True) # "Top" means positive z values in cut_planes local coordinates.
-    )
-    # show_object(stud, name = "stud DEBUG HELPER", options = {"color": "red", "alpha": 0})
-    return stud
 
 
 # =============================================================================
