@@ -1,13 +1,10 @@
-# Coffee Cobra
+# Small Optical Sorter
 
 **[1. Overview](#1-overview)**<br/>
-**[2. Parts](#2-parts)**
-
-* [2.1. Outward Filter](#21-outward-filter)
-* [2.2. Strap Extender](#22-strap-extender)
-
-**[3. Todo List](#3-todo-list)**<br/>
-**[4. Code Conventions](#4-code-conventions)**<br/>
+**[2. Machine Build](#2-machine-build)**<br/>
+**[3. Software Installation](#3-software-installation)**<br/>
+**[4. Usage](#4-usage)**<br/>
+**[5. Contributor Guide](#5-contributor-guide)**
 
 
 ## 1. Overview
@@ -27,7 +24,7 @@
 **Licence.** This design is licensed under the [Unlicense](https://github.com/tanius/smallopticalsorter/blob/master/LICENSE). Libraries bundled with this repository may use different open source licences, as mentioned in their library files.
 
 
-## 2. Hardware Build
+## 2. Machine Build
 
 To generate the geometry of the mechanical parts from the [parametric design code files](https://github.com/tanius/smallopticalsorter/tree/master/mechanics), you need to install [CadQuery](https://github.com/CadQuery/cadquery). Preferably also [CQ-editor](https://github.com/CadQuery/CQ-editor), a Qt based cross-platform user interface for CadQuery.
 
