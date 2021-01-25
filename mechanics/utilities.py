@@ -1,5 +1,11 @@
 import cadquery as cq
 from math import sin, cos, radians
+import logging
+
+log = logging.getLogger(__name__)
+
+# Semantic coordinate access helper for lists and Tuples.
+(x, y, z) = (0, 1, 2)
 
 # =============================================================================
 # Simple functions
@@ -23,12 +29,15 @@ def circlePoint(radius, angle):
 
 def part(self, part_class, measures):
     """
-    CadQuery plugin that allows to access any custom class defining a part in a way similar to 
-    any other CadQuery Workplane method.
-    
-    It works for all classes that (1) store the part geometry as a CadQuery Workplane object in 
-    attribute `model` and (2) have a constructor with two required parameters: `workplane` to hand 
-    the CadQuery workplane to build on, and `measures` to define the part. Usage example: 
+    Factory method that lets you create objects from a custom class relative to the current 
+    CadQuery workplane, just like you create any other objects in CadQuery's fluid (i.e. 
+    JQuery-like) API.
+
+    To use this method, register it as a CadQuery plugin, and supply it with a custom class and 
+    a set of class-specific measures defining the part to create. It works for all classes that (1) 
+    store the part geometry as a CadQuery Workplane object in attribute `model` and (2) have a 
+    constructor with two required parameters: `workplane` to hand the CadQuery workplane to build 
+    on, and `measures` to define the part. Usage example: 
     
     ```
     import utilities
@@ -150,3 +159,46 @@ def uProfile(self, w, straight_h, rounded_h, wall_thickness):
     profile = profile.offset2D(wall_thickness / 2, "arc")
     
     return profile
+
+
+def boxAround(self):
+    """
+    Creates a solid box around the objects provided on the stack. The box corresponds to the 
+    bounding box containing all objects on the stack (both 2D and 3D).
+    """
+
+    # Calculate a combined bounding box of all objects on the stack.
+    bounding_box = self.objects[0].BoundingBox()
+    for shape in self.objects:
+        bounding_box.add(shape.BoundingBox())
+
+    # log.info("\n")
+    # log.info("xmin = %s, xmax = %s", bounding_box.xmin, bounding_box.xmax)
+    # log.info("ymin = %s, ymax = %s", bounding_box.ymin, bounding_box.ymax)
+    # log.info("zmin = %s, zmax = %s", bounding_box.zmin, bounding_box.zmax)
+
+    # Create a solid bounding box sized box in a new object.
+    box_around = (
+        cq
+        .Workplane("XY")
+        .transformed(offset = bounding_box.center)
+        .box(bounding_box.xlen, bounding_box.ylen, bounding_box.zlen)
+    )
+
+    # Not just "return box_around". We want CadQuery to link the modified stack object to the 
+    # previous stack: https://cadquery.readthedocs.io/en/latest/extending.html#preserving-the-chain
+    return self.newObject(box_around.objects)
+
+
+def boxAroundTest(id):
+    cq.Workplane.boxAround = boxAround
+
+    if id == 1:
+        inner_objects = cq.Workplane("XY").box(50, 10, 10).box(10, 50, 10).box(10, 10, 50)
+    elif id == 2:
+        inner_objects = cq.Workplane("XY").sphere(10).box(10, 50, 10)
+
+    box_around = inner_objects.boxAround()
+
+    show_object(inner_objects, name = "inner_objects", options = {"color": "blue", "alpha": 0})
+    show_object(box_around, name = "box_around", options = {"color": "yellow", "alpha": 0.7})
