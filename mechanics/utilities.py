@@ -4,8 +4,14 @@ import logging
 
 log = logging.getLogger(__name__)
 
+
+# =============================================================================
+# Constants and variables
+# =============================================================================
+
 # Semantic coordinate access helper for lists and Tuples.
 (x, y, z) = (0, 1, 2)
+
 
 # =============================================================================
 # Simple functions
@@ -22,6 +28,15 @@ def circlePoint(radius, angle):
     """
     angle = radians(angle)
     return (radius * sin(angle), radius * cos(angle))
+
+
+def attr_names(obj):
+    """
+    Determine the names of user-defined attributes of the given SimpleName object.
+    Source: https://stackoverflow.com/a/27532110
+    """
+    return sorted(obj.__dict__)
+
 
 # =============================================================================
 # CadQuery plugins
@@ -50,6 +65,12 @@ def part(self, part_class, measures):
         as the type. If your class has the name "MyPart", you write `MyPart`, not `"MyPart"`.
     :param measures: A dict with the parameters defining the part, to be provided to the constructor 
         of the given class.
+
+    .. todo:: Use the **kwargs mechanism to pass all parameters after part_class to the class, 
+        instead of just measures.
+    .. todo:: To help with interactive debugging in the console, add a mixin attribute to every 
+        object in part.model.objects that has been added by doing part_class(self, measures). 
+        Otherwise there is no way to access the underlaying model objects from a CQ Workplane object.
     """
     part = part_class(self, measures) # Dynamic instantiation from the type contained in part_class.
 
