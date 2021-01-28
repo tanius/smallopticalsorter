@@ -1,6 +1,7 @@
 import cadquery as cq
 from math import sin, cos, radians
 import logging
+from types import SimpleNamespace
 
 log = logging.getLogger(__name__)
 
@@ -12,6 +13,33 @@ log = logging.getLogger(__name__)
 # Semantic coordinate access helper for lists and Tuples.
 (x, y, z) = (0, 1, 2)
 
+# Semantic direction names.
+dir2d = SimpleNamespace(
+    pos_x   = ( 1,0),
+    neg_x   = (-1,0),
+    pos_y   = (0, 1),
+    neg_y   = (0,-1),
+
+    right   = ( 1,0),
+    left    = (-1,0),
+    up      = (0, 1),
+    down    = (0,-1)
+)
+dir3d = SimpleNamespace(
+    pos_x   = ( 1,0,0),
+    neg_x   = (-1,0,0),
+    pos_y   = (0, 1,0),
+    neg_y   = (0,-1,0),
+    pos_z   = (0,0, 1),
+    neg_z   = (0,0,-1),
+
+    right   = ( 1,0,0),
+    left    = (-1,0,0),
+    forward = (0, 1,0),
+    back    = (0,-1,0),
+    up      = (0,0, 1),
+    down    = (0,0,-1)
+)
 
 # =============================================================================
 # Simple functions
@@ -34,6 +62,8 @@ def attr_names(obj):
     """
     Determine the names of user-defined attributes of the given SimpleName object.
     Source: https://stackoverflow.com/a/27532110
+
+    :return: A list of strings.
     """
     return sorted(obj.__dict__)
 
@@ -223,3 +253,119 @@ def boxAroundTest(id):
 
     show_object(inner_objects, name = "inner_objects", options = {"color": "blue", "alpha": 0})
     show_object(box_around, name = "box_around", options = {"color": "yellow", "alpha": 0.7})
+
+
+def transformedWorkplane(
+    self, offset = None, rotate = None, invert = False, 
+    offset_x = None, offset_y = None, offset_z = None, 
+    rotate_x = None, rotate_y = None, rotate_z = None,
+    centerOption = "ProjectedOrigin", origin = None
+):
+    """
+    Creates a new 2-D workplane, located relative to the first face on the stack, with additional 
+    3D offset and rotation applied.
+
+    This is a shorthand combining Workplane::workplane and Workplane::transformed.
+
+    :param rotate: A 3-tuple giving rotate_x, rotate_y, rotate_z at once.
+    :param offset: A 3-tuple giving offset_x, offset_y, offset_z at once.
+    :param invert: Invert the z direction from that of the face.
+    :param offset_x: Offset along the x axis to transform the workplane center relative to its 
+        initial location.
+    :param offset_y: Offset along the y axis to transform the workplane center relative to its 
+        initial location.
+    :param offset_z: Offset along the z axis to transform the workplane center relative to its 
+        initial location.
+    :param rotate_x: Rotation angle around the x axis to transform the workplane relative to its 
+        initial orientation.
+    :param rotate_y: Rotation angle around the y axis to transform the workplane relative to its 
+        initial orientation.
+    :param rotate_z: Rotation angle around the z axis to transform the workplane relative to its 
+        initial orientation.
+    :param centerOption: How the local origin of workplane is determined. Value must be one of 
+        "CenterOfMass", "ProjectedOrigin", "CenterOfBoundBox", with the meaning as in the original 
+        Workplane::workplane method.
+    :param origin: The origin to use for plane's center. Requires 'ProjectedOrigin' centerOption.
+        Usage as in the original Workplane::workplane method.
+
+    .. todo:: Apply the three rotations all relative to the local coordinate system as it was at 
+        the start of this method, not as it was after the previosu rotation. Otherwise rotations 
+        around more than one axis are very unintuitive. However, it is not yet clear how to 
+        implement this as Workplane::copyWorkplane() would replace the workplane we're working on, 
+        undoing the previous rotation completely.
+    """
+
+    if isinstance(offset, tuple):
+        if offset_x == None and offset_y == None and offset_z == None:
+            (offset_x, offset_y, offset_z) = offset
+        else: 
+            raise ValueError("A 3-tuple offset is redundant to per-axis offsets, and mutually exclusive.")
+    elif offset == None:
+        offset_x = 0 if offset_x == None else offset_x
+        offset_y = 0 if offset_y == None else offset_y
+        offset_z = 0 if offset_z == None else offset_z
+    else:
+        raise ValueError("Wrong type supplied for offset.")
+
+    if isinstance(rotate, tuple):
+        if rotate_x == None and rotate_y == None and rotate_z == None:
+            (offset_x, offset_y, offset_z) = offset
+        else:
+            raise ValueError("A 3-tuple offset is redundant to per-axis rotations, and mutually exclusive.")
+    elif rotate == None:
+        rotate_x = 0 if rotate_x == None else rotate_x
+        rotate_y = 0 if rotate_y == None else rotate_y
+        rotate_z = 0 if rotate_z == None else rotate_z
+    else:
+        raise ValueError("Wrong type supplied for rotate.")
+
+    return (
+        self
+        .workplane(invert = invert, centerOption = centerOption, origin = origin)
+        .transformed(rotate = (rotate_x, rotate_y, rotate_z), offset = (offset_x, offset_y, offset_z))
+    )
+
+def transformedWorkplaneTest():
+    cq.Workplane.transformedWorkplane = transformedWorkplane
+
+    return (
+        cq
+        .Workplane("XY")
+        .transformedWorkplane(rotate_x = 45)
+        .box(1, 1, 5)
+    )
+
+# show_object(transformedWorkplaneTest(), name = "workplane")
+
+
+def xGroove(self, width, depth, length = None):
+    """
+    Cut a groove into the first solid in the current stack, starting from the center resp. location 
+    of the first object in the current stack, and into its local x direction.
+
+    :param width: Width of the groove to cut.
+    :param depth: Depth of the groove to cut.
+    :param length: Length of the groove to cut. Half is cut into +x and half into -x direction. 
+        If omitted, the groove is cut past the end of the face, so that all material that such a 
+        groove can remove is removed. If the provided face is not on a convex part of the solid, 
+        this may have unintended side effects.
+    """
+
+    # If length is not given, determine it from the size of the face to cut into.
+    if length == None:
+        length = 3000 # temporary dumb implementation
+
+        # Find the first item in the stack that is a face.
+        # todo
+
+        # Determine the dimensions of the face's bounding box.
+        # todo
+
+        # Set length from the largest dimension of the face's bounding box, times 3 to also cut 
+        # through most inclines adjacent of the face to cut.
+        # todo
+
+    # Cut the groove into the solid.
+    grooved = self.rect(length, width).cutBlind(depth)
+
+    return self.newObject(grooved.objects)

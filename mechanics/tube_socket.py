@@ -5,14 +5,18 @@ import importlib
 from math import sqrt, asin, degrees
 from types import SimpleNamespace as Measures
 import utilities # Local directory import.
+import wall_insert # Local directory import.
 
 # Selective reloading to pick up changes made between script executions.
 # See: https://github.com/CadQuery/CQ-editor/issues/99#issue-525367146
 importlib.reload(utilities)
+importlib.reload(wall_insert)
+
+# In addition to importing whole packages as neededfor importlib.reload(), import some names.
+from wall_insert import WallInsert
 
 # Register imported CadQuery plugins.
 cq.Workplane.part = utilities.part
-cq.Workplane.boxAround = utilities.boxAround
 
 log = logging.getLogger(__name__)
 
@@ -65,7 +69,7 @@ class TubeSocket:
                 along the tube centerline if the tube had been cut with a simple straight cut.
             - **``seal_cavity.position``:** 0 means "one ``tube_wall_thickness`` away from the tube input".
             - **``seal_cavity.depth``:** Defines the depth of the seal cavity.
-            - **``seal_cavity.outer_diameter``:** Defines the inner diameter of the seal cavity.
+            - **``seal_cavity.inner_diameter``:** Defines the inner diameter of the seal cavity.
             - **``wall.thickness``:** Thickness of the tube socket's integrated wall element.
             - **``wall.groove_width``:** Thickness of the panel elements to be inserted into the 
                 tube socket's integrated wall element.
@@ -75,11 +79,11 @@ class TubeSocket:
                 wall element. A Dict with elements "left", "right", "top", "bottom", each with a 
                 Boolean value. Values not supplied default to ``False``.
 
-        .. todo:: Add a debug mode, controlled via a class attribute. If True, the build() method 
-            would render additional, transparent helper objects to assist in debugging.
+        .. too:: Add fillets to the edges where the tube goes through the wall.
         """
 
         self.model = workplane
+        self.debug = False
         self.measures = measures
 
         # Add optional measures if missing, using their default values.
@@ -98,7 +102,7 @@ class TubeSocket:
         if not hasattr(measures.wall.grooves, 'right'):      measures.wall.grooves.right = False
         if not hasattr(measures.wall.grooves, 'top'):        measures.wall.grooves.top = False
         if not hasattr(measures.wall.grooves, 'bottom'):     measures.wall.grooves.bottom = False
-
+        
         self.measures.tube.length = \
             self.measures.tube.length_before_wall + self.measures.tube.length_after_wall
 
@@ -109,67 +113,90 @@ class TubeSocket:
         m = self.measures
         debug_appearance = {"color": "orange", "alpha": 0.5}
 
-        # Create the tube as a solid (with no hole).
-        tube_solid = (
+        # Create the tube as a solid (with no hole and no rotation).
+        vertical_tube_solid = (
             self.model
             .circle(m.tube.outer_diameter / 2)
             .extrude(m.tube.length)
+            .faces("|Z").tag("end_faces")
+            # todo: Add the end thickening of the tube socket.
+            .union(
+                cq.Workplane("XY")
+                .circle(m.seal_cavity.inner_diameter / 2 + 2 * m.tube.wall_thickness)
+                .extrude(m.seal_cavity.depth + 2 * m.tube.wall_thickness)
+                .translate((0, 0, m.tube.length - m.seal_cavity.depth - 2 * m.tube.wall_thickness - m.seal_cavity.position))
+            )
+        )
+        if self.debug: show_object(vertical_tube_solid, name = "DEBUG: vertical_tube_solid", options = debug_appearance)
+        if self.debug: show_object(vertical_tube_solid.faces(tag = "end_faces"), name = "DEBUG: vertical_tube_solid: end_faces", options = {"color": "red"})
+
+        # Create the hollow tube (with no rotation).
+        vertical_tube = (
+            self.model
+            .union(vertical_tube_solid)
+            .faces(tag = "end_faces").shell(-3)
+        )
+        if self.debug: show_object(vertical_tube, name = "DEBUG: vertical_tube", options = debug_appearance)
+
+        # Rotate and move the tube things into their final position.
+        tube_solid = (
+            vertical_tube_solid
             .translate((0, 0, -m.tube.length_after_wall / 2))
             .rotate((1,0,0), (-1,0,0), m.tube.vertical_angle)
             .rotate((0,0,1), (0,0,-1), m.tube.horizontal_angle)
         )
+        if self.debug: show_object(tube_solid, name = "DEBUG: tube_solid", options = debug_appearance)
+        tube = (
+            # todo: Fix the rotation code duplication compared to above.
+            vertical_tube
+            .translate((0, 0, -m.tube.length_after_wall / 2))
+            .rotate((1,0,0), (-1,0,0), m.tube.vertical_angle)
+            .rotate((0,0,1), (0,0,-1), m.tube.horizontal_angle)
+        )
+        if self.debug: show_object(tube, name = "DEBUG: tube", options = debug_appearance)
 
+        # Create a large, for-construction wall to use for measuring by intersection probing.
         # todo: The calculation below may fail for large m.tube.wall_thickness
         intersector_size = m.tube.outer_diameter * 5
         wall_intersector = (
             cq.Workplane("XZ")
             .box(intersector_size, intersector_size, m.wall.thickness)
         )
-        #show_object(wall_intersector, name = "DEBUG: wall_intersector", options = debug_appearance)
+        if self.debug: show_object(wall_intersector, name = "DEBUG: wall_intersector", options = debug_appearance)
 
-        # Create the minimum wall element (the part that must not be cut by any grooves) by 
-        # creating a bouning box around the intersection of the tube and a hypothetical large 
-        # wall element.
-        wall = (
-            self.model
-            .add(tube_solid)
+        # Determine the minimum size of the wall as necessary for the tube to go through only 
+        # the front and back face of the wall.
+        min_wall_size = (
+            tube_solid # todo: Why does "self.model.add(tube_solid)" not work here?
             .intersect(wall_intersector)
-            .boxAround()
+            .val() # Unwrap the first stack item to get a CAD primitive from the CadQuery object.
+            .BoundingBox()
         )
-        #show_object(wall, name = "DEBUG: wall: (1) minimum size", options = debug_appearance)
 
-        # Construct the grooves for the panel inserts by adding to the minimum_wall's edge faces.
-        for wall_facename in utilities.attr_names(m.wall.grooves):
-            face_selector = dict(left = "<X", right = ">X", top = ">Z", bottom = "<Z")
-            workplane_rotation = dict(left = (0,0,90), right = (0,0,-90), top = (0,0,0), bottom = (0,0,0))
-            #log.info("m.wall.grooves.%s = %s", groove_position, getattr(m.wall.grooves, groove_position))
-            if getattr(m.wall.grooves, wall_facename):
-                wall = (
-                    wall
-                    # Select the face to extend.
-                    .faces(face_selector[wall_facename])
-                    # Convert the face to a wire, add it to pending wires, then return to the CadQuery 
-                    # object provided after .faces() so that .workplane() will work. Returning to that 
-                    # will affect the stack only, not the set of pending wires.
-                    .wires().toPending().end()
-                    # Create a workplane on the selected face, as otherwise extruding might happen in the 
-                    # wrong direction. See: https://github.com/CadQuery/cadquery/issues/439#issuecomment-674157352
-                    .workplane()
-                    # Extrude the part of the wall that will hold the groove on this edge.
-                    .extrude(15)
-                    # A working alternative to all the above is: 
-                    # cq.Workplane("XY").add(wall).faces("<Z").wires().toPending().extrude(-20)
+        # Calculate dynamic measures of the wall insert from the model built so far.
+        m.wall.width = (
+            min_wall_size.xlen
+            # Extend the wall size by the space needed for grooves. For inclined tubes, a small 
+            # part of the grooves could be cut into the minimum sized wall without cutting into the 
+            # tube shape, but for simplicity we ignore that possibility.
+            + (m.wall.groove_depth if m.wall.grooves.right else 0)
+            + (m.wall.groove_depth if m.wall.grooves.left  else 0)
+        )
+        m.wall.height = (
+            min_wall_size.zlen
+            # Extend the wall size by the space needed for grooves. As above.
+            + (m.wall.groove_depth if m.wall.grooves.top    else 0)
+            + (m.wall.groove_depth if m.wall.grooves.bottom else 0)
+        )
 
-                    # Select the faces that should get grooves and cut a groove as deep as the 
-                    # previous extrucsion and as wide as the wall panel (plus tolerance).
-                    .faces(face_selector[wall_facename])
-                    .workplane(invert = True)
-                    .transformed(rotate = workplane_rotation[wall_facename])
-                    .rect(200, 3)
-                    .cutBlind(15)
-                )
-
-        show_object(wall, name = "DEBUG: wall: (2) with grooves", options = debug_appearance)
+        # Create the wall element.
+        wall_insert = cq.Workplane("XY").part(WallInsert, m.wall)
+        # todo: Move the wall element in the xz plane; the original position works only if opposing 
+        #     sides have either both grooves of both no grooves; maybe the part creation class has to 
+        #     return it translated
+        # todo: Move the wall element in the y direction so that the tube extends the right amount 
+        #     on each side.
+        if self.debug: show_object(wall_insert, name = "DEBUG: wall_insert", options = debug_appearance)
 
         # Cut the protruding parts at the entry of the wall element.
         # todo
@@ -177,11 +204,12 @@ class TubeSocket:
         # Cut the specified angle to the end of the tube.
         # todo
 
-        # Assemble the final model:
-        # – Merge the wall element with the solid tube.
-        # – Cut a hole through the solid tube.
-        # todo
-        self.model = self.model.add(tube_solid).union(wall)
+        # Assemble the final model.
+        self.model = (
+            wall_insert
+            .cut(tube_solid)
+            .union(tube)
+        )
 
 
 # =============================================================================
@@ -198,15 +226,16 @@ measures = Measures(
     input = Measures(vertical_angle = -45,),
     output = Measures(vertical_angle = 45),
     socket = Measures(clearance = 2, depth = 35), # todo:: Use correct measures for EN 1451 tubes.
-    seal_cavity = Measures(position = 5, depth = 5, outer_diameter = 5),
+    # todo: Make the seal cavity optional, and remove it from this part spec.
+    seal_cavity = Measures(position = 50, depth = 4, inner_diameter = 34),
     wall = Measures(
         thickness = 11,
-        groove_width = 3,
+        groove_width = 3.0 * 1.1,  # Wall panel thickness and tolerance.
         groove_depth = 8,
         grooves = Measures(left = True, right = True, bottom = True)
     )
 )
-show_options = {"color": "steelgray", "alpha": 0.9}
+show_options = {"color": "lightgray", "alpha": 0}
 
 tube_socket = cq.Workplane("XY").part(TubeSocket, measures)
 show_object(tube_socket, name = "tube_socket", options = show_options)
