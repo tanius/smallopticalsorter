@@ -72,6 +72,10 @@ def attr_names(obj):
 # CadQuery plugins
 # =============================================================================
 
+# todo: Create a plugin that allows to select the most outward coordinates of an object, even when 
+#   there is no vertex at that point. This could work by detecting the vertex from the intersection 
+#   of the object and a plane along one of its bounding box faces.
+
 def part(self, part_class, measures):
     """
     CadQuery plugin that provides a factory method for custom parts, allowing to create these in a 
@@ -290,6 +294,7 @@ def transformedWorkplane(
     :param origin: The origin to use for plane's center. Requires 'ProjectedOrigin' centerOption.
         Usage as in the original Workplane::workplane method.
 
+    .. todo:: Allow to give offset as a 2-tuple, with z assumed zero.
     .. todo:: Apply the three rotations all relative to the local coordinate system as it was at 
         the start of this method, not as it was after the previosu rotation. Otherwise rotations 
         around more than one axis are very unintuitive. However, it is not yet clear how to 
@@ -411,3 +416,59 @@ def test_multistep_cone():
     show_object(cone)
 
 # test_multistep_cone()
+
+
+def splitcut(self, keepTop = False, keepBottom = False):
+    """
+    A CadQuery plugin that splits the first solid on the stack along a workplane through the first 
+    object on the stack.
+
+    This is a replacement for Workplane::split() using cut(), because split() does not work well 
+    yet for more complex geometries and also can take much longer (as of 2021-01). Due to the way 
+    this is implemented, there will be a small loss of material (0.001 thick) along the cutting plane.
+
+    :param keepTop: Whether to return the top part of the cut operation, measured in z coordinates 
+        of the workplane used for cutting.
+    :param keepTop: Whether to return the bottom part of the cut operation, measured in z coordinates 
+        of the workplane used for cutting.
+
+    .. todo:: Fix that when cutting with an inclined plane through only one point of the outer 
+        circular edge of a tube, no cut is performed. The returned single solid is the original tube 
+        but with an added line for the intended cut.
+    """
+
+    result = self.workplane().tag("split_plane")
+    result = (
+        self
+        .cut(
+            cq.Workplane("XY")
+            .copyWorkplane(result.workplaneFromTagged("split_plane"))
+            # todo: Use a square plane with an edge length larger than the bounding box diagonal of 
+            #   the object to split, to make sure it will be cut through completely.
+            .box(500, 500, 0.001)
+        )
+    )
+
+    if result.solids().size() == 2:
+        if keepTop and keepBottom:     return self.newObject(result.solids().objects)
+        if keepTop and not keepBottom: return self.newObject(result.solids(">Z").objects)
+        if not keepTop and keepBottom: return self.newObject(result.solids("<Z").objects)
+    else:
+        return self.newObject(result.solids().objects)
+
+
+def test_splitcut():
+    cq.Workplane.splitcut = splitcut
+
+    cylinder = cq.Workplane("XY").circle(10).extrude(100)
+    split_cylinder = (
+        cylinder
+        .faces(">Z")
+        .workplane()
+        .transformed(rotate = (45,0,0), offset = (0,0,-50))
+        .splitcut(keepTop = True, keepBottom = True)
+    )
+
+    show_object(split_cylinder)
+
+#test_splitcut()
