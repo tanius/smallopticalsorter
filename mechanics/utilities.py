@@ -74,15 +74,15 @@ def attr_names(obj):
 
 def part(self, part_class, measures):
     """
-    Factory method that lets you create objects from a custom class relative to the current 
-    CadQuery workplane, just like you create any other objects in CadQuery's fluid (i.e. 
-    JQuery-like) API.
+    CadQuery plugin that provides a factory method for custom parts, allowing to create these in a 
+    similar manner to how primitives are created in CadQuery's fluid (means, JQuery-like) API.
+    
+    The custom part has to be defined in a custom class that (1) stores the part geometry as a 
+    CadQuery Workplane object in attribute `model` and (2) has a constructor with two required 
+    parameters: `workplane` to hand the CadQuery workplane object to build on, and `measures` for 
+    the part specs. The part will be created in the local coordinate system.
 
-    To use this method, register it as a CadQuery plugin, and supply it with a custom class and 
-    a set of class-specific measures defining the part to create. It works for all classes that (1) 
-    store the part geometry as a CadQuery Workplane object in attribute `model` and (2) have a 
-    constructor with two required parameters: `workplane` to hand the CadQuery workplane to build 
-    on, and `measures` to define the part. Usage example: 
+    Usage example:
     
     ```
     import utilities
@@ -93,8 +93,8 @@ def part(self, part_class, measures):
     :param self: The CadQuery Workplane object to which this plugin will be attached at runtime.
     :param part_class: Your class used to create your custom part. Provided not as a string, but 
         as the type. If your class has the name "MyPart", you write `MyPart`, not `"MyPart"`.
-    :param measures: A dict with the parameters defining the part, to be provided to the constructor 
-        of the given class.
+    :param measures: A class-specific object with the specifications defining the part, to be 
+        provided to the constructor of the given class.
 
     .. todo:: Use the **kwargs mechanism to pass all parameters after part_class to the class, 
         instead of just measures.
@@ -132,7 +132,8 @@ def optionalPolarLine(self, length, angle):
 
 def sagittaArcOrLine(self, endPoint, sag):
     """
-    An arc that can also be a straight line, unlike with the CadQuery core Workplane.sagittaArc().
+    CadQuery plugin that creates an arc that can also be a straight line, unlike with the CadQuery 
+    core Workplane.sagittaArc().
 
     :param endPoint: End point for the arc. A 2-tuple, in workplane coordinates.
     :param sag: Sagitta of the arc, or zero to get a straight line. A float, indicating the 
@@ -146,7 +147,8 @@ def sagittaArcOrLine(self, endPoint, sag):
 
 def uProfile(self, w, straight_h, rounded_h, wall_thickness):
     """
-    A configurable U-shaped profile that can be rounded or flat at the bottom, open to +y.
+    CadQuery plugin that creates a configurable U-shaped profile that can be rounded or flat at the 
+    bottom, open to +y.
 
     :param w: The width of the profile, measured between the outside of its two parallel legs.
     :param straight_h: Straight part of the wall height. Must be at least wall_thickness, as that 
@@ -214,8 +216,8 @@ def uProfile(self, w, straight_h, rounded_h, wall_thickness):
 
 def boxAround(self):
     """
-    Creates a solid box around the objects provided on the stack. The box corresponds to the 
-    bounding box containing all objects on the stack (both 2D and 3D).
+    CadQuery plugin that creates a solid box around the objects provided on the stack. The box 
+    corresponds to the bounding box containing all objects on the stack (both 2D and 3D).
     """
 
     # Calculate a combined bounding box of all objects on the stack.
@@ -262,8 +264,8 @@ def transformedWorkplane(
     centerOption = "ProjectedOrigin", origin = None
 ):
     """
-    Creates a new 2-D workplane, located relative to the first face on the stack, with additional 
-    3D offset and rotation applied.
+    CadQuery plugin that creates a new 2-D workplane, located relative to the first face on the 
+    stack, with additional 3D offset and rotation applied.
 
     This is a shorthand combining Workplane::workplane and Workplane::transformed.
 
@@ -340,8 +342,8 @@ def transformedWorkplaneTest():
 
 def xGroove(self, width, depth, length = None):
     """
-    Cut a groove into the first solid in the current stack, starting from the center resp. location 
-    of the first object in the current stack, and into its local x direction.
+    CadQuery plugin that cuts a groove into the first solid in the current stack, starting from the 
+    center of the first object in the current stack, and into the local x direction.
 
     :param width: Width of the groove to cut.
     :param depth: Depth of the groove to cut.
@@ -369,3 +371,43 @@ def xGroove(self, width, depth, length = None):
     grooved = self.rect(length, width).cutBlind(depth)
 
     return self.newObject(grooved.objects)
+
+
+def multistep_cone(self, steps):
+    """
+    CadQuery plugin that creates objects with varying circular cross-section from cone shapes.
+
+    The plugin combines cone shapes obtained from pairwise lofting of subsequent cross-sections, 
+    which leads to a longitudinal section made from straight lines only. This is different from 
+    lofting all cross-sections in one operation, creating a curved longitudinal section.
+
+    :param steps: A list of tuples `(float, float)`. Each tuple defines the circular cross-section 
+        of one step. The first tuple element designates the distance relative to the last step's 
+        cross-section. The second tuple second element designates the cross-section radius.
+    """
+
+    wires = self
+    cones = self.newObject(self.objects)
+    
+    for step in steps:
+        wires = wires.workplane(offset = step[0]).circle(step[1])
+
+        # Once we have two wires, do a pairwise loft().
+        if len(wires.ctx.pendingWires) == 2:
+            cones.add(wires.loft())
+
+            # Lofting removes all pending wires. Recreate the last one for the next step's lofting.
+            wires = wires.circle(step[1])
+    
+    # Union and return all cones.
+    return cones.combine(glue = True)
+
+
+def test_multistep_cone():
+    cq.Workplane.multistep_cone = multistep_cone
+
+    cone = cq.Workplane("XY").multistep_cone(((0,2), (10,2), (10,4), (10,4)))
+    # cone = cq.Workplane("XY").multistep_cone(((0,2), (3,2), (4,0.5), (1,2)))
+    show_object(cone)
+
+# test_multistep_cone()

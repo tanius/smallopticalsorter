@@ -23,6 +23,7 @@ class WallInsert:
         """
         A parametric, grooved wall element that can be integrated into thin panel walls.
 
+        .. todo:: Parameter documentation.
         .. todo:: Add parameters for edge and corner rounding.
         """
 
@@ -30,11 +31,12 @@ class WallInsert:
         self.measures = measures
 
         # Add optional measures if missing, using their default values.
-        if not hasattr(measures, 'grooves'):            measures.grooves = Measures()
-        if not hasattr(measures.grooves, 'left'):       measures.grooves.left = False
-        if not hasattr(measures.grooves, 'right'):      measures.grooves.right = False
-        if not hasattr(measures.grooves, 'top'):        measures.grooves.top = False
-        if not hasattr(measures.grooves, 'bottom'):     measures.grooves.bottom = False
+        if not hasattr(measures, 'center_offset'):  measures.center_offset = cq.Vector(0, 0, 0)
+        if not hasattr(measures, 'grooves'):        measures.grooves = Measures()
+        if not hasattr(measures.grooves, 'left'):   measures.grooves.left = False
+        if not hasattr(measures.grooves, 'right'):  measures.grooves.right = False
+        if not hasattr(measures.grooves, 'top'):    measures.grooves.top = False
+        if not hasattr(measures.grooves, 'bottom'): measures.grooves.bottom = False
 
         self.build()
 
@@ -42,8 +44,20 @@ class WallInsert:
     def build(self):
         m = self.measures
 
+        # Determine how to place the center of the ungrooved part at center_offset.
+        # Because, that point is being used as the "part center".
+        offset = m.center_offset
+        if m.grooves.right and not m.grooves.left: offset.x += m.groove_depth / 2
+        if m.grooves.left and not m.grooves.right: offset.x -= m.groove_depth / 2
+        if m.grooves.top and not m.grooves.bottom: offset.z += m.groove_depth / 2
+        if m.grooves.bottom and not m.grooves.top: offset.z -= m.groove_depth / 2
+
         # Create the basic wall shape.
-        wall_insert = self.model.box(m.width, m.thickness, m.height)
+        wall_insert = (
+            self.model
+            .box(m.width, m.thickness, m.height)
+            .translate(offset)
+        )
 
         # Cut the grooves for the wall panels.
         for side in ("left", "right", "top", "bottom"):
