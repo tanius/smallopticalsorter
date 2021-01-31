@@ -72,10 +72,6 @@ def attr_names(obj):
 # CadQuery plugins
 # =============================================================================
 
-# todo: Create a plugin that allows to select the most outward coordinates of an object, even when 
-#   there is no vertex at that point. This could work by detecting the vertex from the intersection 
-#   of the object and a plane along one of its bounding box faces.
-
 def part(self, part_class, measures):
     """
     CadQuery plugin that provides a factory method for custom parts, allowing to create these in a 
@@ -389,6 +385,12 @@ def multistep_cone(self, steps):
     :param steps: A list of tuples `(float, float)`. Each tuple defines the circular cross-section 
         of one step. The first tuple element designates the distance relative to the last step's 
         cross-section. The second tuple second element designates the cross-section radius.
+
+    .. todo:: Support a change in radius without a change in height. This is not possible with 
+        pairwise lofting, as it does not create a solid but a zero-volume shape.
+    .. todo:: Support a parameter for a curved longitudinal outline, by lofting all wires at once.
+        This should be available as another element in the tuples defining a step, as that allows 
+        to mix straightline and curved longitudinal outlines in one solid easily.
     """
 
     wires = self
@@ -472,3 +474,72 @@ def test_splitcut():
     show_object(split_cylinder)
 
 #test_splitcut()
+
+
+def union_pending_wires(self):
+    """
+    CadQuery plugin that replaces all pending wires with their 2D union. It requires all pending 
+    wires to be co-planar.
+    
+    This supplements the CadQuery methods Workplane::combine() and Workplane::consolidateWires() and 
+    Wire::combine(), which cannot deal with intersecting wires yet.
+
+    :return: A Workplane object with the combined wire on the stack (besides nothing else) and in 
+        its pending wires (besides nothing else).
+
+    .. todo:: Enforce that all wires must be co-planar, raising an error otherwise. Or maybe in that 
+        case only union those that are coplanar. This can be checked by making sure all normals are 
+        parallel and the centers are all in one plane.
+        https://cadquery.readthedocs.io/en/latest/classreference.html#cadquery.occ_impl.shapes.Mixin1D.normal
+    """
+
+    wires = [obj for obj in self.ctx.pendingWires if isinstance(obj, cq.Wire)]
+    if len(wires) < 2: return self # Nothing to union for 0 or 1 pending wires.
+
+    extrude_direction = wires[0].normal()
+    solids = (
+        cq.Workplane("XY")
+        # Create a workplane coplanar with the wires, as this will define the extrude() direction.
+        .add(cq.Face.makeFromWires(wires[0]))
+        .workplane()
+    )
+
+    # Extrude all wires into solids, because 3D union'ing is the only reliable way right now.
+    for wire in wires:
+        solids = solids.add(wire).toPending().extrude(1)
+
+    union_wire = (
+        solids
+        .combine() # 3D union of all the solids.
+        # Select the bottom face, as that contains the wires in their original local z position.
+        .faces(cq.DirectionMinMaxSelector(extrude_direction, directionMax = False))
+        .wires()
+    )
+
+    # We have to build the result in the actual object that will be returned to have control over 
+    # its pending wires and edges. A "return self.newObject(combined_wire.objects)" would simply 
+    # copy over the pending wires and edges of the given object.
+    result = self.newObject(union_wire.objects)
+    result.ctx.pendingWires = [union_wire.val()] # Replace existing pending wires with union wire.
+
+    #log.info("DEBUG: combine_wires: stack size: %s", result.size())
+    #log.info("DEBUG: combine_wires: pending wires: %s", len(result.ctx.pendingWires))
+
+    return self.newObject(result.objects)
+
+
+def test_union_pending_wires():
+    cq.Workplane.union_pending_wires = union_pending_wires
+    log.info("")
+
+    result = (
+        cq.Workplane("XY")
+        .rect(40,40)
+        .circle(24)
+        .center(-20, 0).rect(20, 16)
+        .union_pending_wires()
+        .extrude(15)
+    )
+    show_object(result)
+
+#test_union_pending_wires()
