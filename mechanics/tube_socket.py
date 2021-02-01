@@ -74,6 +74,7 @@ class TubeSocket:
                 Boolean value. Values not supplied default to ``False``.
 
         .. todo:: Add fillets to the edges where the tube goes through the wall.
+        .. todo:: Add parameters to round the edges of the input and output tube ends.
         .. todo:: Add parameters for minimum wall height and width (including grooves). That also 
             will require parameters to determine the position of the wall insert.
         .. todo:: Add parameters that allow a horizontal tube angle in addition to the vertical one.
@@ -137,7 +138,7 @@ class TubeSocket:
                 # Seal cavity.
                 # todo: Give slightly inclined outside walls to the seal cavity.
                 cq.Workplane("XY")
-                .circle(m.seal_cavity.inner_diameter / 2 + 2 * m.shell_thickness)
+                .circle(m.seal_cavity.inner_diameter / 2 + m.shell_thickness)
                 .extrude(m.seal_cavity.depth + 2 * m.shell_thickness)
                 .translate((0, 0, m.length - m.seal_cavity.depth - 2 * m.shell_thickness - m.seal_cavity.position))
             )
@@ -145,7 +146,7 @@ class TubeSocket:
         if self.debug: show_object(vertical_tube_solid.faces(tag = "end_faces"), name = "DEBUG: vertical_tube_solid: end_faces", options = {"color": "red"})
 
         # Create the hollow tube (with no rotation).
-        vertical_tube = vertical_tube_solid.faces(tag = "end_faces").shell(-3)
+        vertical_tube = vertical_tube_solid.faces(tag = "end_faces").shell(-m.shell_thickness)
         if self.debug: show_object(vertical_tube, name = "DEBUG: vertical_tube", options = debug_appearance)
 
         # Cut the specified angle to input of the tube. (Much easier before rotating the tube.)
@@ -251,20 +252,22 @@ measures = Measures(
     # behind the wall's surface. That lets CadQuery hang depending on added grooves.
     # Let it stick out at least 0.1 mm more.
     # todo: Fix the hang condition when the tube end is not fully in front of the wall surface.
-    length_before_wall = 21.3,
-    length_after_wall = 47,
-    angle = 45,
-    transition_pos = 55,
+    length_before_wall = 17.7, # 21.3 at 45°, 17.7 at 40°
+    length_after_wall = 60,
+    # todo: Fix that the geometry construction fails for angles >28° and <31°.
+    angle = 40,
+    # todo: Count position_pos from the wall center, to make it independent of length_before_wall.
+    transition_pos = 48,
     transition_length = 5,
     input = Measures(
         inner_diameter = 32, # todo: Use correct measures for EN 1451 tubes.
-        cut_angle = -45
+        cut_angle = -30
     ),
     output = Measures(
         inner_diameter = 26, # todo: Use correct measures for EN 1451 tubes.
         # There can be some issues with incorrect cuts and hangs at certain angles, esp. those 
         # that make the cut go through edges. Just try slightly different angles then.
-        cut_angle = 34
+        cut_angle = 49
     ),
     wall = Measures(
         thickness = 11,
