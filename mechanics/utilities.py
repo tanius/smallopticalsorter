@@ -476,13 +476,26 @@ def test_splitcut():
 #test_splitcut()
 
 
-def union_pending_wires(self):
+def combine_wires(self):
     """
-    CadQuery plugin that replaces all pending wires with their 2D union. It requires all pending 
+    CadQuery plugin that replaces all wires on the stack with their 2D union. It requires all pending 
     wires to be co-planar.
     
     This supplements the CadQuery methods Workplane::combine() and Workplane::consolidateWires() and 
-    Wire::combine(), which cannot deal with intersecting wires yet.
+    Wire::combine(), which cannot deal with intersecting wires yet. To use this, you must place 
+    multiple wires on the stack. That is only possible with Workplane::add(), as .rect() etc. will 
+    clear the stack before adding a single new wire. Example:
+
+    ```
+    model = (
+        cq.Workplane("XY")
+        .add( cq.Workplane("XY").rect(40, 40, forConstruction = True) )
+        .add( cq.Workplane("XY").rect(20, 16, forConstruction = True).translate((0,20)) )
+        .combine_wires()
+        .toPending()
+        .extrude(12)
+    )
+    ```
 
     :return: A Workplane object with the combined wire on the stack (besides nothing else) and in 
         its pending wires (besides nothing else).
@@ -493,7 +506,10 @@ def union_pending_wires(self):
         https://cadquery.readthedocs.io/en/latest/classreference.html#cadquery.occ_impl.shapes.Mixin1D.normal
     """
 
-    wires = [obj for obj in self.ctx.pendingWires if isinstance(obj, cq.Wire)]
+    #log.info("DEBUG: combine_wires: stack size: %s", self.size())
+    #log.info("DEBUG: combine_wires: pending wires: %s", len(self.ctx.pendingWires))
+
+    wires = [obj for obj in self.objects if isinstance(obj, cq.Wire)]
     if len(wires) < 2: return self # Nothing to union for 0 or 1 pending wires.
 
     extrude_direction = wires[0].normal()
@@ -508,7 +524,7 @@ def union_pending_wires(self):
     for wire in wires:
         solids = solids.add(wire).toPending().extrude(1)
 
-    union_wire = (
+    combined_wire = (
         solids
         .combine() # 3D union of all the solids.
         # Select the bottom face, as that contains the wires in their original local z position.
@@ -516,30 +532,171 @@ def union_pending_wires(self):
         .wires()
     )
 
-    # We have to build the result in the actual object that will be returned to have control over 
-    # its pending wires and edges. A "return self.newObject(combined_wire.objects)" would simply 
-    # copy over the pending wires and edges of the given object.
-    result = self.newObject(union_wire.objects)
-    result.ctx.pendingWires = [union_wire.val()] # Replace existing pending wires with union wire.
-
-    #log.info("DEBUG: combine_wires: stack size: %s", result.size())
-    #log.info("DEBUG: combine_wires: pending wires: %s", len(result.ctx.pendingWires))
-
-    return self.newObject(result.objects)
+    return self.newObject(combined_wire.objects)
 
 
-def test_union_pending_wires():
-    cq.Workplane.union_pending_wires = union_pending_wires
+def test_combine_wires():
+    cq.Workplane.combine_wires = combine_wires
     log.info("")
+
+    # without combine_wires()
+    result_before = (
+        cq.Workplane("XY")
+        .add( cq.Workplane("XY").rect(40, 40, forConstruction = True) ).toPending()
+        .add( cq.Workplane("XY").rect(20, 16, forConstruction = True).translate((0,20)) ).toPending()
+        .extrude(12)
+        .translate((0,0,-20))
+    )
+    show_object(result_before, name = "without combine_wires()")
+
+    # with combine_wires()
+    result_after = (
+        cq.Workplane("XY")
+        .add( cq.Workplane("XY").rect(40, 40, forConstruction = True) )
+        .add( cq.Workplane("XY").rect(20, 16, forConstruction = True).translate((0,20)) )
+        .combine_wires()
+        .toPending()
+        .extrude(12)
+    )
+    show_object(result_after, name = "with combine_wires()")
+
+#test_combine_wires()
+
+
+def clear_pending_wires(self):
+    result = self.newObject(self.objects)
+    result.ctx.pendingWires = []
+
+    return result
+
+def test_clear_pending_wires():
+    cq.Workplane.clear_pending_wires = clear_pending_wires
+
+    model = (
+        cq.Workplane("XY")
+        .rect(10, 10)
+        .clear_pending_wires()
+        .translate((0, 20))
+        .toPending()
+        .extrude(1)
+    )
+    show_object(model)
+
+#test_clear_pending_wires()
+
+
+def add_rect(self, xLen, yLen, centered = True):
+    """
+    A CadQuery plugin that creates a rectangle, adds it to the stack but not to pendingWires, and 
+    does not clear the stack.
+    """
+    result = (
+        self
+        .newObject(self.objects)
+        # By wrapping in add(), we avoid rect() clearing the stack.
+        .add(
+            cq.Workplane()
+            .copyWorkplane(self)
+            .rect(xLen, yLen, centered, forConstruction = True)
+        )
+    )
+
+    return result
+
+
+def test_add_rect():
+    cq.Workplane.add_rect = add_rect
+    cq.Workplane.combine_wires = combine_wires
 
     result = (
         cq.Workplane("XY")
-        .rect(40,40)
-        .circle(24)
-        .center(-20, 0).rect(20, 16)
-        .union_pending_wires()
-        .extrude(15)
+        .add_rect(10, 10).translate((20, 0))
+        .add_rect(5, 5).translate((3, 0))
+        .add_rect(7, 7)
+        .combine_wires()
+        .toPending()
+        .extrude(1)
     )
+
     show_object(result)
 
-#test_union_pending_wires()
+# test_add_rect()
+
+
+def add_circle(self, radius):
+    """
+    A CadQuery plugin that creates a circle, adds it to the stack but not to pendingWires, and 
+    does not clear the stack.
+    """
+    result = (
+        self
+        .newObject(self.objects)
+        # By wrapping in add(), we avoid rect() clearing the stack.
+        .add(
+            cq.Workplane()
+            .copyWorkplane(self)
+            .circle(radius, forConstruction = True)
+        )
+    )
+
+    return result
+
+
+def test_add_circle():
+    cq.Workplane.add_circle = add_circle
+    cq.Workplane.combine_wires = combine_wires
+
+    result = (
+        cq.Workplane("XY")
+        .add_circle(10).translate((15, 0))
+        .add_circle(10)
+        .combine_wires()
+        .toPending()
+        .extrude(1)
+    )
+
+    show_object(result)
+
+#test_add_circle()
+
+
+def translate_last(self, vec):
+    """
+    A cadQuery plugin that translates only the topmost item on the stack (the one added last before 
+    calling this plugin).
+    """
+    result = self.newObject(self.objects)
+
+    to_translate = result.objects.pop()
+    result.objects.append(to_translate.translate(vec))
+
+    return result
+
+
+def test_translate_last():
+    cq.Workplane.add_circle = add_circle
+    cq.Workplane.combine_wires = combine_wires
+    cq.Workplane.translate_last = translate_last
+
+    result = (
+        cq.Workplane("XY")
+        .add_circle(2)
+        .add_circle(10).translate_last((15, 0))
+        .combine_wires()
+        .toPending()
+        .extrude(1)
+    )
+
+    show_object(result)
+
+#test_translate_last()
+
+# todo: Create a plugin add_closed() that will close the pending edges and add the wire to the 
+# stack, but not to pendingWires (different from Workplane::close()).
+
+# todo: Create a plugin offset() that will replace one wire on the stack with an offset wire, 
+# not affecting pending wires.
+
+# todo: Create a plugin slot2D() that replaces the original one with a version that allows a 
+# "forConstruction" parameter. See:
+# https://cadquery.readthedocs.io/en/latest/classreference.html#cadquery.Workplane.slot2D
