@@ -16,7 +16,7 @@ class MotorMount:
         """
         A parametric stepper motor mount.
 
-        :param workplane: The CadQuery workplane to create the chute on.
+        :param workplane: The CadQuery workplane to create this part on.
         :param measures: The measures to use for the parameters of this design. Expects a nested 
             [SimpleNamespace](https://docs.python.org/3/library/types.html#types.SimpleNamespace) 
             object, which may have the following attributes:
@@ -34,10 +34,17 @@ class MotorMount:
             - **``brackets.hole_diameter``:** todo
             - **``brackets.fillet_radius``:** todo
 
+        .. todo:: Reimplement the construction of the wall mount brackets, using bracket() from 
+            utilities.py.
         .. todo:: Build the object into the opposite y direction, so that its faceplate faces 
             into the "front" (positive y) direction.
         .. todo:: As an alternative to a central countersunk hole in the faceplate, when configured 
-            use two Slod2D elements instead, allowing to mount the motor without removing the mount.
+            use two Slot2D elements instead, allowing to mount the motor without removing the mount.
+        .. todo:: Add a parameter for triangular braces to connect the wall mount brackets to the 
+            motor enclosure in a more durable manner.
+        .. todo:: Add a parameter for cooling holes throughout the side walls and lower wall. Or 
+            even better, add vertical ribs on the inside of the vertical walls (so the air can rise) 
+            and holes to the bottom, esp. to the bottom of the spaces between the ribs.
         """
 
         cq.Workplane.combine_wires = utilities.combine_wires
@@ -84,11 +91,10 @@ class MotorMount:
     def build(self):
         m = self.measures
 
-        # Create an U profile, with two flaps at the upper end pointing outwards, by using 
-        # union_pending_wires to combine multiple intersecting rectangles.
-        # baseplane = self.model.newObject(self.model.objects)
         self.model = (
             self.model
+
+            # First create an U profile, with two flaps at the upper end pointing outwards.
 
             # Front wall profile
             .add_rect(m.width, m.wall_thickness)
@@ -106,7 +112,7 @@ class MotorMount:
             .add_rect(m.brackets.width, m.wall_thickness, centered = False)
             .translate_last((-m.width / 2 - m.brackets.width, m.depth - m.wall_thickness))
 
-            # Extrude the profile.
+            # Union the wires to create the desired U profile, then extrude it.
             .combine_wires().toPending()
             .extrude(m.height)
 
