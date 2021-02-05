@@ -1,10 +1,14 @@
 import cadquery as cq
+import cadquery.selectors as cqs
 from math import sin, cos, radians
 import logging
 from types import SimpleNamespace
 
 log = logging.getLogger(__name__)
 
+# todo: De-register the plugins after use by code here. Otherwise there can be hard-to-debug issues 
+#   as the plugin will still appear as registered for client code, and overwriting the registration 
+#   is not easily possible from there.
 
 # =============================================================================
 # Constants and variables
@@ -662,7 +666,7 @@ def test_add_circle():
 
 def translate_last(self, vec):
     """
-    A cadQuery plugin that translates only the topmost item on the stack (the one added last before 
+    A CadQuery plugin that translates only the topmost item on the stack (the one added last before 
     calling this plugin).
     """
     result = self.newObject(self.objects)
@@ -691,12 +695,373 @@ def test_translate_last():
 
 #test_translate_last()
 
-# todo: Create a plugin add_closed() that will close the pending edges and add the wire to the 
-# stack, but not to pendingWires (different from Workplane::close()).
 
-# todo: Create a plugin offset() that will replace one wire on the stack with an offset wire, 
-# not affecting pending wires.
+def ifelse(self, condition, then_method, then_args, else_method, else_args):
+    """
+    A CadQuery plugin to execute any other CadQuery plugin if a condition applies. This allows to 
+    integrate "if" statements without breaking out of the fluid API call chain.
 
-# todo: Create a plugin slot2D() that replaces the original one with a version that allows a 
-# "forConstruction" parameter. See:
-# https://cadquery.readthedocs.io/en/latest/classreference.html#cadquery.Workplane.slot2D
+    However, the calling syntax is not great, as the method to call has to be provided via a string 
+    for technical reasons. So it seems better to break the chained methods calls and use "if".
+
+    :param condition: The condition that has to be met to execute the specified method call.
+    :param method: Name of the Workplane class' method to execute if the condition applies. This 
+        has to be provided as a string, as there is no variable referencing the current state of 
+        a chained fluent API call before that chained call has been evaluated completely.
+    :param *pos_args: Positional arguments to be provided to the specified method. Write them 
+        one after another just as you would in an actual call of that method.
+    :param *kw_args: Keyword arguments to be provided to the specified method. Write them 
+        one after another just as you would in an actual call of that method.
+
+    .. todo:: Move this to a file with CadQuery experiments. It's not suitable for practical use.
+    .. todo:: Allow to also provide positional parameters, not just keyword parameters, to the 
+        methods to call.
+    .. todo:: The call syntax is not readable or practically useful for this generic case. But 
+        it would work to provide several variants for the most used cases: .union_if(), .cut_if() 
+        etc..
+    """
+    if condition:
+        method = getattr(self, then_method) # Convert string method name to callable reference.
+        return method(**then_args)
+    else:
+        method = getattr(self, else_method) # Convert string method name to callable reference.
+        return method(**else_args)
+
+
+def test_ifelse():
+    cq.Workplane.ifelse = ifelse
+
+    result = cq.Workplane("XY")
+    result = (
+        result
+        .box(10, 10, 1)
+        .edges("|Z")
+        .ifelse(1<2, "fillet", {"radius": 2}, "end", {"n": 1})
+    )
+    show_object(result)
+
+#test_ifelse()
+
+
+def fillet_if(self, condition, radius):
+    """
+    .. todo:: Documentation.
+    """
+
+    # solid = self.findSolid()
+
+    # edgeList = cast(List[Edge], self.edges().vals())
+    # if len(edgeList) < 1:
+    #     raise ValueError("Fillets requires that edges be selected")
+
+    # s = solid.fillet(radius, edgeList)
+    # return self.newObject([s.clean()])
+
+    if condition:
+        return self.fillet(radius)
+    else:
+        return self.newObject([self.findSolid()])
+
+
+def test_fillet_if():
+    cq.Workplane.fillet_if = fillet_if
+
+    result = cq.Workplane("XY")
+    result = (
+        result
+        .box(10, 10, 1)
+        .edges("|Z")
+        .fillet_if(1<2, 2)
+    )
+    show_object(result)
+
+#test_fillet_if()
+
+
+def chamfer_if(self, condition, length, length2 = None):
+    """
+    .. todo:: Documentation.
+    """
+    if condition:
+        return self.chamfer(length, length2)
+    else:
+        return self.newObject([self.findSolid()])
+
+
+def test_chamfer_if():
+    cq.Workplane.chamfer_if = chamfer_if
+
+    result = cq.Workplane("XY")
+    result = (
+        result
+        .box(10, 10, 1)
+        .edges("|Z")
+        .chamfer_if(1<2, 2)
+    )
+    show_object(result)
+
+#test_chamfer_if()
+
+
+def show_local_axes(self, length = 20):
+    """
+    A CadQuery plugin to visualize the local coordinate system as a help for debugging.
+
+    .. todo:: Fix that this plugin cannot be imported from another file, as then the error 
+        message will be "name show_object is not defined", as that other file is not opened in 
+        cq-editor.
+    .. todo:: Allow to specify a prefix for the show_object() name to show.
+    .. todo:: Render arrowheads at the tops of the axes, as seen in cq-editor.
+    .. todo:: Render a small white sphere at the center of the axes, as seen in cq-editor itself.
+    """
+    x_axis = (
+        cq.Workplane().copyWorkplane(self)
+        # No idea why rotating 90° is needed, as -90° would be expected.
+        .transformed(rotate = (0, 90, 0))
+        .circle(length / 20).extrude(length)
+    )
+    y_axis = (
+        cq.Workplane().copyWorkplane(self)
+        .transformed(rotate = (-90, 0, 0))
+        .circle(length / 20).extrude(length)
+    )
+    z_axis = (
+        cq.Workplane().copyWorkplane(self)
+        .circle(length / 20).extrude(length)
+    )
+
+    show_object(x_axis, name = "local X", options = {"color": "red"})
+    show_object(y_axis, name = "local Y", options = {"color": "green"})
+    show_object(z_axis, name = "local Z", options = {"color": "blue"})
+
+    return self
+
+
+def test_show_local_axes():
+    cq.Workplane.show_local_axes = show_local_axes
+
+    # Workplane on an ege.
+    result = (
+        cq.Workplane()
+        .box(10, 10, 1)
+        .faces(">Z")
+        .edges(">Y")
+        .workplane(centerOption = "CenterOfMass")
+        .show_local_axes(3)
+        .end(3)
+    )
+    show_object(result)
+
+    # Workplane on a vertex.
+    result = (
+        cq.Workplane().transformed(offset = (0,0,20))
+        .box(10, 10, 1)
+        .faces(">Z")
+        .edges(">Y")
+        .vertices("<X")
+        .workplane(centerOption = "CenterOfMass")
+        .show_local_axes(3)
+        .end(4)
+    )
+    show_object(result)
+
+# test_show_local_axes()
+
+
+def bracket(self, thickness, height, width, offset = 0, angle = 90,
+    hole_count = 0, hole_diameter = None, 
+    edge_fillet = None, edge_chamfer = None, corner_fillet = None, corner_chamfer = None
+):
+    """
+    A CadQuery plugin to create an angle bracket along an edge.
+
+    Must be used on a workplane that (1) coincides with the face on which to build the bracket, 
+    (2) has its origin at the center of the edge along which to build the bracket and (3) has its 
+    x axis pointing along the edge along which to build the bracket and (4) has its y axis pointing 
+    away from the center of the face on which to build the bracket.
+
+    :param …: todo
+
+    .. todo:: Support to create only one hole in the bracket. Currently this results in "division 
+        by float zero".
+    .. todo:: Change the edge filleting so that it is done before cutting the holes, and so that 
+        the holes are only cut into the non-filleted space. Otherwise the OCCT will often refuse, 
+        as the fillet would interfere with an existing hole.
+    .. todo:: Allow to specify fillets as "0", which should be converted to "None" in the constructor.
+    .. todo:: Reimplement hole_coordinates() using Workplane::rarray(), see 
+        https://cadquery.readthedocs.io/en/latest/classreference.html#cadquery.Workplane.rarray
+    .. todo:: Extend the hole_coordinates() mechanism to also be able to generated two-dimensional
+        hole patterns. A way to specify this would be hole_count = (2,3), meaning 2×3 holes. This 
+        also requires to introduce a parameter "hole_margins", because margins between holes and 
+        edges can no longer be automatically calculates as for a single line of holes.
+    .. todo:: Make it possible to pass in two different lengths for the chamfer. That will allow 
+        to create a better support of the core below it, where needed.
+    .. todo:: Implement behavior for the angle parameter.
+    .. todo:: Implement behavior for the offset parameter.
+    .. todo:: Fix that the automatic hole positioning algorithm in hole_coordinates() does not work 
+        well when the bracket's footprint is approaching square shape, or higher than wide.
+    .. todo: Let this plugin determine its workplane by itself from the edge and face provided as 
+        the top and second from top stack elements when called. That is however difficult because 
+        the workplane has to be rotated so that the y axis points away from the center of the face 
+        on which the bracket is being built.
+    """
+
+    def hole_coordinates(width, height, hole_count):
+        v_offset = height / 2
+        h_offset = width / 2 if hole_count == 1 else v_offset
+        h_spacing = 0 if hole_count == 1 else (width - 2 * offset) / (hole_count - 1)
+        points = []
+
+        # Go row-wise through all points from bottom to top and collect their coordinates.
+        # (Origin is assumed in the lower left of the part's back surface.)
+        for column in range(hole_count):
+            points.append((
+                h_offset + column * h_spacing,
+                v_offset
+            ))
+
+        log.info("hole coordinates = %s", points)
+        return points
+
+    cq.Workplane.translate_last = translate_last
+    cq.Workplane.fillet_if = fillet_if
+    cq.Workplane.chamfer_if = chamfer_if
+    cq.Workplane.show_local_axes = show_local_axes
+
+    # todo: Raise an argument error if both edge_fillet and edge_chamfer is given.
+    # todo: Raise an argument error if both corner_fillet and corner_chamfer is given.
+
+    result = self.newObject(self.objects)
+
+    # Debug helper. Can only be used when executing utilities.py in cq-editor. Must be disabled 
+    # when importing utilities.py, as it will otherwise cause "name 'show_object' is not defined".
+    # result.show_local_axes()
+
+    # Determine the CadQuery primitive "Plane" object wrapped by the Workplane object. See: 
+    # https://cadquery.readthedocs.io/en/latest/_modules/cadquery/cq.html#Workplane
+    plane = result.plane
+
+    # Calculate various local directions as Vector objects using global coordinates.
+    # 
+    # We want to convert a direction from local to global coordinates, not a point. A 
+    # direction is not affected by coordinate system offsetting, so we have to undo that 
+    # offset by subtracting the converte origin.
+    dir_min_x  = plane.toWorldCoords((-1, 0, 0))  - plane.toWorldCoords((0,0,0))
+    dir_max_x  = plane.toWorldCoords(( 1, 0, 0))  - plane.toWorldCoords((0,0,0))
+    dir_min_y  = plane.toWorldCoords(( 0,-1, 0))  - plane.toWorldCoords((0,0,0))
+    dir_max_y  = plane.toWorldCoords(( 0, 1, 0))  - plane.toWorldCoords((0,0,0))
+    dir_min_z  = plane.toWorldCoords(( 0, 0,-1))  - plane.toWorldCoords((0,0,0))
+    dir_max_z  = plane.toWorldCoords(( 0, 0, 1))  - plane.toWorldCoords((0,0,0))
+    dir_min_xz = plane.toWorldCoords((-1, 0,-1))  - plane.toWorldCoords((0,0,0))
+
+    result = (
+        result
+        
+        # Create the bracket's cuboid base shape.
+        .union(
+            cq.Workplane()
+            .copyWorkplane(result)
+            .center(0, -thickness / 2)
+            .box(width, thickness, height)
+            # Raise the created box (dir_max_z in local coordinates). Since translate() requires 
+            # global coordinates, we have to use converted ones.
+            .translate_last(dir_max_z * (height / 2))
+        )
+
+        # Cut the hole pattern into the bracket.
+        # It's much easier to transform the workplane rather than creating a new one. Because for 
+        # a new workplane, z and x are initially aligned with respect to global coordinates, so the 
+        # coordinate system would have to be rotated for our needs, which is complex. Here we modify 
+        # the workplane to originate in the local bottom left corner of the bracket base shape.
+        .transformed(offset = (-width / 2, 0), rotate = (90,0,0))
+        .pushPoints(hole_coordinates(width, height, hole_count))
+        .circle(hole_diameter / 2)
+        .cutThruAll()
+
+        # Fillets and chamfers.
+        # The difficulty here is that we can't use normal CadQuery string selectors, as these always 
+        # refer to global directions, while inside this method we can only identify the direction 
+        # towards the bracket in our local coordinates. So we have to use the underlying selector 
+        # classes, and also convert from our local coordinates to the expected global ones manually.
+
+        # Add a fillet along the bracketed edge if desired.
+        .faces(cqs.DirectionNthSelector(dir_max_y, -2))
+        # As a bracket on the other side might be present, we have to filter the selected faces 
+        # further to exclude that.
+        .faces(cqs.DirectionMinMaxSelector(dir_max_z))
+        .edges(cqs.DirectionMinMaxSelector(dir_min_z))
+        .fillet_if(edge_fillet is not None, edge_fillet)
+
+        # Add a chamfer along the bracketed edge if desired.
+        .faces(cqs.DirectionNthSelector(dir_max_y, -2))
+        .edges(cqs.DirectionMinMaxSelector(dir_min_z))
+        .chamfer_if(edge_chamfer is not None, edge_chamfer)
+
+        # Treat the bracket corners with a fillet if desired.
+        .faces(cqs.DirectionMinMaxSelector(dir_max_z))
+        .edges( # String selector equivalent in local coords: "<X or >X"
+            cqs.SumSelector(
+                cqs.DirectionMinMaxSelector(dir_min_x),
+                cqs.DirectionMinMaxSelector(dir_max_x)
+            )
+        )
+        .fillet_if(corner_fillet is not None, corner_fillet)
+
+        # Treat the bracket corners with a chamfer if desired.
+        .faces(cqs.DirectionMinMaxSelector(dir_max_z))
+        .edges( # String selector equivalent in local coords: "<X or >X"
+            cqs.SumSelector(
+                cqs.DirectionMinMaxSelector(dir_min_x),
+                cqs.DirectionMinMaxSelector(dir_max_x)
+            )
+        )
+        .chamfer_if(corner_chamfer is not None, corner_chamfer)
+    )
+    return result
+
+
+def test_bracket():
+    cq.Workplane.bracket = bracket
+    cq.Workplane.transformedWorkplane = transformedWorkplane
+
+    result = (
+        cq.Workplane()
+        .box(10, 10, 2)
+
+        # Provide the expected workplane to bracket().
+        # Creating a workplane on an edge puts the origin at the center of the edge, as needed here.
+        # Different options are provided to test brackets on all edges of the top and bottom faces.
+        #
+        #.faces(">Z").edges("<X").transformedWorkplane(centerOption = "CenterOfMass", rotate_z = 90)
+        #.faces(">Z").edges(">X").transformedWorkplane(centerOption = "CenterOfMass", rotate_z = 270)
+        #.faces(">Z").edges("<Y").transformedWorkplane(centerOption = "CenterOfMass", rotate_z = 180)
+        .faces(">Z").edges(">Y").transformedWorkplane(centerOption = "CenterOfMass", rotate_z = 0)
+        #
+        #.faces("<Z").edges("<X").transformedWorkplane(centerOption = "CenterOfMass", rotate_z = 90)
+        #.faces("<Z").edges(">X").transformedWorkplane(centerOption = "CenterOfMass", rotate_z = 270)
+        #.faces("<Z").edges("<Y").transformedWorkplane(centerOption = "CenterOfMass", rotate_z = 0)
+        #.faces("<Z").edges(">Y").transformedWorkplane(centerOption = "CenterOfMass", rotate_z = 180)
+        #
+        #.faces("<X").edges(">Y").transformedWorkplane(centerOption = "CenterOfMass", rotate_z = 90)
+        #.faces("<X").edges("<Y").transformedWorkplane(centerOption = "CenterOfMass", rotate_z = 270)
+        #.faces("<X").edges("<Z").transformedWorkplane(centerOption = "CenterOfMass", rotate_z = 180)
+        #.faces("<X").edges(">Z").transformedWorkplane(centerOption = "CenterOfMass", rotate_z = 0)
+
+        .bracket(
+            thickness = 1, height = 5, width = 10, 
+            hole_count = 2, hole_diameter = 1,
+            edge_fillet = 1.2,
+            corner_fillet = 1.2
+        )
+
+        .faces("<Z").edges(">Y").transformedWorkplane(centerOption = "CenterOfMass", rotate_z = 180)
+        .bracket(
+            thickness = 1, height = 5, width = 10, 
+            hole_count = 2, hole_diameter = 1,
+            edge_fillet = 1.2,
+            corner_fillet = 1.2
+        )
+    )
+    show_object(result)
+
+#test_bracket()
