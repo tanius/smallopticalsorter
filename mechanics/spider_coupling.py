@@ -22,15 +22,33 @@ class SpiderCoupling:
         :param measures: The measures to use for the parameters of this design. Expects a nested 
             [SimpleNamespace](https://docs.python.org/3/library/types.html#types.SimpleNamespace) 
             object, which may have the following attributes:
-            - **``TODO``:** TODO
+            - **``diameter``:** Coupling diameter in mm.
+            - **``base_height``:** Height of the cylindrical base of the coupling, without the cogs.
+            - **``clamp_gap``:** Width of the central clamping groove in the coupling's base.
+            - **``cogs.count``:** Number of cogs on each half of the coupling.
+            - **``cogs.height``:** Height of the cogs above the coupling base.
+            - **``cogs.gap_angle``:** Angular gap left to the left and right of each cog after 
+                interlocking with their counterparts from the other half of the coupling.
+            - **``shaft.diameter ``:** Diameter of the shaft hole in the bottom of the coupling.
+            - **``shaft.flatten``:** Height of the arc cut off from a cull circle for shafts with 
+                a D-shape cross-section.
+            - **``bolts.hole_size``:** Size of the clamping bolt holes.
+            - **``bolts.headhole_size``:** Hole diameter for the heads of the clamping bolts.
+            - **``bolts.nuthole_size``:** Size between flats for the hexagonal hole for the nuts of 
+                the clamping bolts.
+            - **``bolts.clamp_length``:** Clamping length (between bolt head and nut) of the clamping 
+                bolts.
 
         .. todo:: Fix that the cog generation code only works for 4 and 6 cogs so far.
         .. todo:: Make the cogs rounded or pointed at the top so that two parts will usually 
             come together under light pressure without having to turn one manually.
+        .. todo:: Add a parameter that can offset the initial rotation angle of the cogs, so that 
+            the groove can go through a location with no cogs on top for better flexing.
         .. todo:: Add a parameter to also use a rubber insert, allowing to create a backlash-free 
             coupling.
         .. todo:: Add a parameter to configure the size of the circular cutout between the cogs.
         .. todo:: Determine a default for clamp_lenght automatically if no measure is given.
+        .. todo:: Initialize missing measures with defaults where reasonable.
         .. todo:: Make the 3D printer bridging distance configurable. Currently, a constant value 
             of 4 mm is used in Workplane::shaft(…, top_diameter = 4).
         """
@@ -93,10 +111,10 @@ class SpiderCoupling:
 
         # Create the cutouts for the clamping nuts and bolts.
         bolt_specs = dict(
-            bolt_size = m.bolt.size, 
-            head_size = m.bolt.head_size, 
-            nut_size = m.bolt.nut_size, 
-            clamp_length = m.bolt.clamp_length,
+            bolt_size = m.bolts.hole_size, 
+            head_size = m.bolts.headhole_size, 
+            nut_size = m.bolts.nuthole_size, 
+            clamp_length = m.bolts.clamp_length,
             head_length = m.diameter, # Just a surely long enough head cutter length.
             nut_length = m.diameter   # Just a surely long enough nut cutter length.
         )
@@ -160,7 +178,7 @@ measures = Measures(
     base_height = 24,
     clamp_gap = 1.5,
     cogs = Measures(
-        count = 4, # Number of teeth on one part of the coupling, not on both together.
+        count = 4, # Can only be 4 or 6 so far due to a bug.
         height = 12,
         gap_angle = 3
     ),
@@ -168,10 +186,10 @@ measures = Measures(
         diameter = 8,
         flatten = 1.5
     ),
-    bolt = Measures( # Rather bolthole measures, slightly larger than the bolts used.
-        size = 4.3,
-        head_size = 7.3,
-        nut_size = 7.3, # M4 nut size is 7.0 mm.
+    bolts = Measures(
+        hole_size = 4.3,
+        headhole_size = 7.3,
+        nuthole_size = 7.3, # M4 nut size is 7.0 mm.
         clamp_length = 10
     )
 )
