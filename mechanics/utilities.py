@@ -1,8 +1,9 @@
 import cadquery as cq
 import cadquery.selectors as cqs
-from math import sin, cos, radians
+from math import sin, cos, radians, sqrt
 import logging
 from types import SimpleNamespace
+from OCP.gp import gp_Pnt
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ dir3d = SimpleNamespace(
 
 def circlePoint(radius, angle):
     """
-    Get the coordinates of apoint on the circle circumference.
+    Get the coordinates of a point on the circle circumference.
     :param radius: Circle radius.
     :param angle: Angle of a radius line to the specified point, with the +y axis as 0°.
     
@@ -177,7 +178,8 @@ def uProfile(self, w, straight_h, rounded_h, wall_thickness):
     # Outside outline.
     # Draw the wall centerline. Mirroring half the line does not simplify anything as it complicated 
     # drawing the arc.
-    profile = (self
+    profile = (
+        self
         # Start position is the centerline of a wall_thickness thick, flat sheet touching the x axis.
         .move(- w / 2 + wall_thickness / 2, - wall_thickness / 2)
         # First straight wall. A straight_h value of just wall_thickness is a flat sheet, so draw no 
@@ -198,7 +200,8 @@ def uProfile(self, w, straight_h, rounded_h, wall_thickness):
     # profile. Because offset2D() cannot deal with zero-width shapes yet due to a bug. See: 
     # https://github.com/CadQuery/cadquery/issues/508
     # todo:: Get the bug mentioned above fixed.
-    profile = (profile
+    profile = (
+        profile
         .hLine(-nothing)
         .vLine(-straight_h + wall_thickness)
         .sagittaArcOrLine(
@@ -268,7 +271,7 @@ def transformedWorkplane(
     centerOption = "ProjectedOrigin", origin = None
 ):
     """
-    CadQuery plugin that creates a new 2-D workplane, located relative to the first face on the 
+    CadQuery plugin that creates a new 2D workplane, located relative to the first face on the 
     stack, with additional 3D offset and rotation applied.
 
     This is a shorthand combining Workplane::workplane and Workplane::transformed.
@@ -276,12 +279,12 @@ def transformedWorkplane(
     :param rotate: A 3-tuple giving rotate_x, rotate_y, rotate_z at once.
     :param offset: A 3-tuple giving offset_x, offset_y, offset_z at once.
     :param invert: Invert the z direction from that of the face.
-    :param offset_x: Offset along the x axis to transform the workplane center relative to its 
-        initial location.
-    :param offset_y: Offset along the y axis to transform the workplane center relative to its 
-        initial location.
-    :param offset_z: Offset along the z axis to transform the workplane center relative to its 
-        initial location.
+    :param offset_x: Offset along the workplane's initial local x axis to transform the workplane 
+        center relative to its initial location. Applied before the rotation.
+    :param offset_y: Offset along the workplane's initial local y axis to transform the workplane 
+        center relative to its initial location. Applied before the rotation.
+    :param offset_z: Offset along the workplane's initial local z axis to transform the workplane 
+        center relative to its initial location. Applied before the rotation.
     :param rotate_x: Rotation angle around the x axis to transform the workplane relative to its 
         initial orientation.
     :param rotate_y: Rotation angle around the y axis to transform the workplane relative to its 
@@ -295,8 +298,9 @@ def transformedWorkplane(
         Usage as in the original Workplane::workplane method.
 
     .. todo:: Allow to give offset as a 2-tuple, with z assumed zero.
+    .. todo:: Allow to start a workplane from a tagged workplane or object by adding a parameter "tag".
     .. todo:: Apply the three rotations all relative to the local coordinate system as it was at 
-        the start of this method, not as it was after the previosu rotation. Otherwise rotations 
+        the start of this method, not as it was after the previous rotation. Otherwise rotations 
         around more than one axis are very unintuitive. However, it is not yet clear how to 
         implement this as Workplane::copyWorkplane() would replace the workplane we're working on, 
         undoing the previous rotation completely.
@@ -356,6 +360,8 @@ def xGroove(self, width, depth, length = None):
         If omitted, the groove is cut past the end of the face, so that all material that such a 
         groove can remove is removed. If the provided face is not on a convex part of the solid, 
         this may have unintended side effects.
+
+    .. todo:: Add a parameter to allow rounding the bottom of the groove.
     """
 
     # If length is not given, determine it from the size of the face to cut into.
@@ -426,8 +432,9 @@ def test_multistep_cone():
 
 def splitcut(self, keepTop = False, keepBottom = False):
     """
-    A CadQuery plugin that splits the first solid on the stack along a workplane through the first 
-    object on the stack.
+    A CadQuery plugin that splits the first solid on the stack along a workplane provided at the 
+    top of the stack. If there is no workplane at the top of the stack, this method will 
+    automatically create the default workplane for the first object on the stack and use that.
 
     This is a replacement for Workplane::split() using cut(), because split() does not work well 
     yet for more complex geometries and also can take much longer (as of 2021-01). Due to the way 
@@ -482,13 +489,11 @@ def test_splitcut():
 
 def combine_wires(self):
     """
-    CadQuery plugin that replaces all wires on the stack with their 2D union. It requires all pending 
-    wires to be co-planar.
+    CadQuery plugin that replaces all wires on the stack with their 2D union. It requires all wires 
+    on the stack to be co-planar.
     
-    This supplements the CadQuery methods Workplane::combine() and Workplane::consolidateWires() and 
-    Wire::combine(), which cannot deal with intersecting wires yet. To use this, you must place 
-    multiple wires on the stack. That is only possible with Workplane::add(), as .rect() etc. will 
-    clear the stack before adding a single new wire. Example:
+    To use this, you must place multiple wires on the stack. That is only possible with 
+    Workplane::add(), as .rect() etc. will clear the stack before adding a single new wire. Example:
 
     ```
     model = (
@@ -501,13 +506,13 @@ def combine_wires(self):
     )
     ```
 
-    :return: A Workplane object with the combined wire on the stack (besides nothing else) and in 
-        its pending wires (besides nothing else).
+    A shortcuts for this technique, Workplane::add_rect() and Workplane::add_circle() are provided 
+    as part of this library.
 
-    .. todo:: Enforce that all wires must be co-planar, raising an error otherwise. Or maybe in that 
-        case only union those that are coplanar. This can be checked by making sure all normals are 
-        parallel and the centers are all in one plane.
-        https://cadquery.readthedocs.io/en/latest/classreference.html#cadquery.occ_impl.shapes.Mixin1D.normal
+    :return: A Workplane object with the combined wire on the stack (besides nothing else) but not 
+        yet in its pending wires.
+
+    .. todo:: Remove this method and its uses. It is now replaced by union_pending().
     """
 
     #log.info("DEBUG: combine_wires: stack size: %s", self.size())
@@ -524,7 +529,8 @@ def combine_wires(self):
         .workplane()
     )
 
-    # Extrude all wires into solids, because 3D union'ing is the only reliable way right now.
+    # Extrude all wires into solids.
+    # This detour via 3D union'ing is the only way right now to reliably union wires.
     for wire in wires:
         solids = solids.add(wire).toPending().extrude(1)
 
@@ -567,7 +573,191 @@ def test_combine_wires():
 #test_combine_wires()
 
 
+def union_pending(self):
+    """
+    CadQuery plugin that replaces all pending wires with their 2D union. It requires all pending 
+    wires to be co-planar.
+    
+    This supplements the CadQuery methods Workplane::combine() and Workplane::consolidateWires() and 
+    Wire::combine(), which cannot deal with intersecting wires yet. Example usage:
+
+    ```
+    model = (
+        cq.Workplane("XY")
+        .rect(40, 40)
+        .rect(20, 16, forConstruction = True).translate((0,20)).toPending()
+        .union_pending()
+        .extrude(12)
+    )
+    ```
+
+    :return: A Workplane object with the combined wire on the stack (besides nothing else) and in 
+        its pending wires (besides nothing else).
+
+    .. todo:: Enforce that all wires must be co-planar, raising an error otherwise. Or maybe in that 
+        case only union those that are coplanar. This can be checked by making sure all normals are 
+        parallel and the centers are all in one plane.
+        https://cadquery.readthedocs.io/en/latest/classreference.html#cadquery.occ_impl.shapes.Mixin1D.normal
+    """
+
+    # It is also possible to union the wires on the stack rather than in pendingWires. However, that 
+    # is not a good idea, as it prevents the use of construction geometry as originally intended, 
+    # namely as helpers to create 2D objects before adding them to pendingWires. Because then, 
+    # "forConstruction = True" would already have the task to keep objects out of pendingWires, so 
+    # could not be used to mean "will only be used as temporary shape, don't create something yet" 
+    # at the same time.
+
+    wires = self._consolidateWires()
+    if len(wires) < 2: return self # Nothing to union for 0 or 1 pending wires.
+
+    extrude_direction = wires[0].normal()
+    solids = (
+        cq.Workplane("XY")
+        # Create a workplane coplanar with the wires, as this will define the extrude() direction.
+        .add(cq.Face.makeFromWires(wires[0]))
+        .workplane()
+    )
+    # Extrude all wires into solids.
+    # This detour via 3D union'ing is the only way right now to reliably union wires.
+    for wire in wires:
+        solids = solids.add(wire).toPending().extrude(1)
+    
+    combined_wire = (
+        solids
+        .combine() # 3D union of all the solids.
+        # Select the bottom face, as that contains the wires in their original local z position.
+        .faces(cq.DirectionMinMaxSelector(extrude_direction, directionMax = False))
+        .wires()
+    )
+
+    self.ctx.pendingEdges = []
+    self.ctx.pendingWires = [combined_wire.val()]
+
+    return self.newObject(combined_wire.vals())
+
+
+def test_union_pending():
+    cq.Workplane.union_pending = union_pending
+    log.info("")
+
+    # without union_pending()
+    result_before = (
+        cq.Workplane("XY")
+        .rect(40, 40)
+        .rect(20, 16, forConstruction = True).translate((0,20)).toPending()
+        .extrude(12)
+        .translate((0,0,-20))
+    )
+    show_object(result_before, name = "without union_pending()")
+
+    # with combine_wires()
+    result_after = (
+        cq.Workplane("XY")
+        .rect(40, 40)
+        .rect(20, 16, forConstruction = True).translate((0,20)).toPending()
+        .union_pending()
+        .extrude(12)
+        .translate((0,0,8))
+    )
+    show_object(result_after, name = "with union_pending()")
+
+#test_union_pending()
+
+
+def difference_pending(self):
+    """
+    CadQuery plugin that replaces all pending wires with their 2D difference of the first in 
+    pendingWires minus all the others. It requires all pending wires to be co-planar. Example usage:
+
+    ```
+    model = (
+        cq.Workplane("XY")
+        .rect(40, 40)
+        .rect(20, 16, forConstruction = True).translate((0,20)).toPending()
+        .subtract_pending()
+        .extrude(12)
+    )
+    ```
+
+    :return: A Workplane object with the resulting wire on the stack (besides nothing else) and in 
+        its pending wires (besides nothing else).
+
+    .. todo:: Enforce that all wires must be co-planar, raising an error otherwise. Or maybe in that 
+        case only union those that are coplanar. This can be checked by making sure all normals are 
+        parallel and the centers are all in one plane.
+        https://cadquery.readthedocs.io/en/latest/classreference.html#cadquery.occ_impl.shapes.Mixin1D.normal
+    """
+
+    wires = self._consolidateWires()
+    if len(wires) < 2: return self # Nothing to difference for 0 or 1 pending wires.
+
+    first_wire = wires[0]
+    other_wires = wires[1:]
+    extrude_direction = first_wire.normal()
+
+    solid = (
+        cq.Workplane("XY")
+        # Create a workplane coplanar with the wires, as this will define the extrude() direction.
+        .add(cq.Face.makeFromWires(wires[0]))
+        .workplane()
+        .add(first_wire).toPending().extrude(1)
+    )
+    # Cut Extrude all wires into solids.
+    # This detour via 3D union'ing is the only way right now to reliably union wires.
+    for other_wire in other_wires:
+        cutter = cq.Workplane("XY").add(other_wire).toPending().extrude(1)
+        solid = solid.cut(cutter)
+    
+    difference_wires = (
+        solid
+        # Select the bottom face, as that contains the wires in their original local z position.
+        .faces(cq.DirectionMinMaxSelector(extrude_direction, directionMax = False))
+        .wires()
+    )
+
+    self.ctx.pendingEdges = []
+    self.ctx.pendingWires = difference_wires.vals() # Will be multiple if there are holes in the shape.
+
+    return self.newObject(difference_wires.vals())
+
+
+def test_difference_pending():
+    cq.Workplane.difference_pending = difference_pending
+    log.info("")
+
+    # without union_pending()
+    result_before = (
+        cq.Workplane("XY")
+        .rect(40, 40)
+        .rect(5, 5)
+        .rect(20, 16, forConstruction = True).translate((0,20)).toPending()
+        .extrude(12)
+        .translate((0,0,-20))
+    )
+    show_object(result_before, name = "without difference_pending()")
+
+    # with combine_wires()
+    result_after = (
+        cq.Workplane("XY")
+        .rect(40, 40)
+        .rect(5, 5)
+        .rect(20, 16, forConstruction = True).translate((0,20)).toPending()
+        .difference_pending()
+        .extrude(12)
+        .translate((0,0,8))
+    )
+    show_object(result_after, name = "with difference_pending()")
+
+#test_difference_pending()
+
+
 def clear_pending_wires(self):
+    """
+    A CadQuery plugin to delete all currently pending wires, while keeping the same wires in the 
+    current stac. Note that it is better to use a forConstruction parameter when creating the wires, 
+    where available. It's effect is simply to preven the wire from automatically being added to 
+    the pending wires.
+    """
     result = self.newObject(self.objects)
     result.ctx.pendingWires = []
 
@@ -593,6 +783,10 @@ def add_rect(self, xLen, yLen, centered = True):
     """
     A CadQuery plugin that creates a rectangle, adds it to the stack but not to pendingWires, and 
     does not clear the stack.
+
+    .. todo:: Remove this method and its uses. 2D objects should be aggregated in pendingWires, not 
+        on the stack, as the latter prevents the proper use of construction geometry. See on 
+        combine_wires() for details.
     """
     result = (
         self
@@ -601,6 +795,7 @@ def add_rect(self, xLen, yLen, centered = True):
         .add(
             cq.Workplane()
             .copyWorkplane(self)
+            # By using "forConstruction", we avoid adding the rectangle to pendingWires.
             .rect(xLen, yLen, centered, forConstruction = True)
         )
     )
@@ -631,14 +826,19 @@ def add_circle(self, radius):
     """
     A CadQuery plugin that creates a circle, adds it to the stack but not to pendingWires, and 
     does not clear the stack.
+
+    .. todo:: Remove this method and its uses. 2D objects should be aggregated in pendingWires, not 
+        on the stack, as the latter prevents the proper use of construction geometry. See on 
+        combine_wires() for details.
     """
     result = (
         self
         .newObject(self.objects)
-        # By wrapping in add(), we avoid rect() clearing the stack.
+        # By wrapping in add(), we avoid circle() clearing the stack.
         .add(
             cq.Workplane()
             .copyWorkplane(self)
+            # By using "forConstruction", we avoid adding the circle to pendingWires.
             .circle(radius, forConstruction = True)
         )
     )
@@ -662,6 +862,48 @@ def test_add_circle():
     show_object(result)
 
 #test_add_circle()
+
+
+def add_polygon(self, nSides, diameter):
+    """
+    A CadQuery plugin that creates a polygon, adds it to the stack but not to pendingWires, and 
+    does not clear the stack.
+
+    .. todo:: Remove this method and its uses. 2D objects should be aggregated in pendingWires, not 
+        on the stack, as the latter prevents the proper use of construction geometry. See on 
+        combine_wires() for details.
+    """
+    result = (
+        self
+        .newObject(self.objects)
+        # By wrapping in add(), we avoid polygon() clearing the stack.
+        .add(
+            cq.Workplane()
+            .copyWorkplane(self)
+            # By using "forConstruction", we avoid adding the polygon to pendingWires.
+            .polygon(nSides, diameter, forConstruction = True)
+        )
+    )
+
+    return result
+
+
+def test_add_polygon():
+    cq.Workplane.add_polygon = add_polygon
+    cq.Workplane.combine_wires = combine_wires
+
+    result = (
+        cq.Workplane("XY")
+        .add_polygon(3, 12)
+        .add_polygon(6, 9)
+        .combine_wires()
+        .toPending()
+        .extrude(1)
+    )
+
+    show_object(result)
+
+#test_add_polygon()
 
 
 def translate_last(self, vec):
@@ -702,7 +944,9 @@ def ifelse(self, condition, then_method, then_args, else_method, else_args):
     integrate "if" statements without breaking out of the fluid API call chain.
 
     However, the calling syntax is not great, as the method to call has to be provided via a string 
-    for technical reasons. So it seems better to break the chained methods calls and use "if".
+    for technical reasons. So it seems better to break the chained methods calls and use "if". Or 
+    create variants of the method to call that include a condition. fillet_if() and chamfer_if() 
+    are provided as part of this library.
 
     :param condition: The condition that has to be met to execute the specified method call.
     :param method: Name of the Workplane class' method to execute if the condition applies. This 
@@ -801,6 +1045,30 @@ def test_chamfer_if():
     show_object(result)
 
 #test_chamfer_if()
+
+
+def extrude_if(self, condition, length):
+    """
+    .. todo:: Documentation.
+    """
+    if condition:
+        return self.extrude(length)
+    else:
+        return self.newObject([self.findSolid()])
+
+
+def test_extrude_if():
+    cq.Workplane.extrude_if = extrude_if
+
+    model = (
+        cq.Workplane("XY")
+        .box(4,4,4)
+        .circle(5)
+        .extrude_if(1<2, 1)
+    )
+    show_object(model)
+
+#test_extrude_if()
 
 
 def show_local_axes(self, length = 20):
@@ -946,6 +1214,9 @@ def bracket(self, thickness, height, width, offset = 0, angle = 90,
     # We want to convert a direction from local to global coordinates, not a point. A 
     # direction is not affected by coordinate system offsetting, so we have to undo that 
     # offset by subtracting the converte origin.
+    #
+    # todo: Put these as lambdas / functions into the global namespace of this file, as they are 
+    #     generally useful.
     dir_min_x  = plane.toWorldCoords((-1, 0, 0))  - plane.toWorldCoords((0,0,0))
     dir_max_x  = plane.toWorldCoords(( 1, 0, 0))  - plane.toWorldCoords((0,0,0))
     dir_min_y  = plane.toWorldCoords(( 0,-1, 0))  - plane.toWorldCoords((0,0,0))
@@ -1065,3 +1336,304 @@ def test_bracket():
     show_object(result)
 
 #test_bracket()
+
+
+def first_solid(self):
+    return self.newObject([self.findSolid()])
+
+
+def test_first_solid():
+    cq.Workplane.first_solid = first_solid
+
+    result = (
+        cq.Workplane("XY")
+        .box(10,10,5)
+        .faces(">Z")
+        .workplane()
+        .first_solid()
+        .faces("<Z")
+    )
+    show_object(result)
+
+#test_first_solid()
+
+
+def angle_sector(self, radius, start_angle, stop_angle, forConstruction = False):
+    """
+    A CadQuery plugin to create a 2D circle sector based on two angles, for each element on the 
+    stack. The elements on the stack are converted to points, which are then used as the centers 
+    for creating the sectors.
+    """
+
+    center_angle = (start_angle + stop_angle) / 2
+
+    origin =     cq.Vector(0, 0, 0)
+    arc_start =  cq.Vector(cos(radians(start_angle)) * radius, sin(radians(start_angle)) * radius, 0)
+    arc_center = cq.Vector(cos(radians(center_angle)) * radius, sin(radians(center_angle)) * radius, 0)
+    arc_end =    cq.Vector(cos(radians(stop_angle)) * radius, sin(radians(stop_angle)) * radius, 0)
+
+    sector = cq.Wire.assembleEdges([
+        cq.Edge.makeLine(origin, arc_start),
+        cq.Edge.makeThreePointArc(arc_start, arc_center, arc_end),
+        cq.Edge.makeLine(origin, arc_end),
+    ])
+    sector.forConstruction = forConstruction
+
+    return self.eachpoint(lambda vector: sector.moved(vector), True)
+
+
+def test_angle_sector():
+    cq.Workplane.angle_sector = angle_sector
+
+    result = (
+        cq.Workplane("XY")
+        .pushPoints([(0,0,0), (0,6,0)])
+        .angle_sector(5, 45, 135)
+        .extrude(1)
+    )
+    show_object(result)
+
+#test_angle_sector()
+
+
+def point_sector(self, arc_angle, forConstruction = False):
+    """
+    A CadQuery plugin to create 2D circle sectors based on (1) the center of the workplane, used as 
+    the center of the sector circle, (2) a given point at the center of the arc and (3) a given 
+    angle. One sector is created for each element on the stack. The elements on the stack are 
+    converted to points, which are then used as the arc center points for creating the sectors.
+    """
+
+    def make_point_sector(arc_center_loc):
+
+        # Convert arc_center_loc from type Location to Vector.
+        # This is a complex conversion: cq.Location → TopLoc_Location → gp_Trsf → gp_Pnt → cq.Vector
+        # Documentation:
+        #   https://dev.opencascade.org/doc/refman/html/class_top_loc___location.html
+        #   https://dev.opencascade.org/doc/refman/html/classgp___trsf.html
+        #   https://dev.opencascade.org/doc/refman/html/classgp___pnt.html
+        arc_center_transf = arc_center_loc.wrapped.Transformation()
+        arc_center_point = gp_Pnt() # Create a point at the origin.
+        arc_center_point.Transform(arc_center_transf)
+        arc_center = cq.Vector(arc_center_point)
+
+        angle = radians(arc_angle)
+        origin = cq.Vector(0, 0, 0)
+
+        # arc_start and arc_end are arc_center point rotated by 1/2 the arc's angle.
+        # Using point rotation formula from https://matthew-brett.github.io/teaching/rotation_2d.html
+        arc_start = cq.Vector(
+            cos(-angle / 2) * arc_center.x - sin(-angle / 2) * arc_center.y,
+            sin(-angle / 2) * arc_center.x + cos(-angle / 2) * arc_center.y,
+            0
+        )
+        arc_end = cq.Vector(
+            cos(angle / 2) * arc_center.x - sin(angle / 2) * arc_center.y,
+            sin(angle / 2) * arc_center.x + cos(angle / 2) * arc_center.y,
+            0
+        )
+
+        sector = cq.Wire.assembleEdges([
+            cq.Edge.makeLine(origin, arc_start),
+            cq.Edge.makeThreePointArc(arc_start, arc_center, arc_end),
+            cq.Edge.makeLine(origin, arc_end),
+        ])
+        sector.forConstruction = forConstruction
+
+        return sector
+
+    return self.eachpoint(make_point_sector, True)
+
+
+def test_point_sector():
+    cq.Workplane.point_sector = point_sector
+
+    model = (
+        cq.Workplane("XY")
+        .polygon(nSides = 7, diameter = 30, forConstruction = True)
+        .vertices()
+        .point_sector(30)
+        .extrude(1)
+    )
+    show_object(model)
+
+
+    model = (
+        cq.Workplane("XY")
+        .pushPoints([(5,0,0), (0,10,0), (-15,0,0), (0,-20,0)])
+        .point_sector(30)
+        .extrude(1)
+        .translate([0,0,20])
+    )
+    show_object(model)
+
+#test_point_sector()
+
+
+def shaft_outline(self, diameter, flatten = 0):
+    radius = diameter / 2
+
+    # Case for a circular shaft outline.
+    if flatten == 0:
+        return self.newObject(self.circle(radius).objects)
+    
+    # Case for a D-shaped shaft outline.
+
+    flatten_start_x = radius - flatten
+    flatten_start_y = sqrt(radius ** 2 - (radius - flatten) ** 2) # Applied Pythagoras.
+    flatten_start_point = (flatten_start_x,  flatten_start_y)
+    flatten_end_point =   (flatten_start_x, -flatten_start_y)
+
+    outline = (
+        self
+        .newObject(self.objects)
+        .moveTo(*flatten_start_point)
+        .threePointArc((-radius, 0), flatten_end_point)
+        .close()
+    )
+
+    return outline
+
+
+def test_shaft_outline():
+    cq.Workplane.shaft_outline = shaft_outline
+    #show_object(cq.Workplane("XY").shaft_outline(10, 1.5))
+    show_object(cq.Workplane("XY").shaft_outline(10, 0))
+
+#test_shaft_outline()
+
+
+def shaft(self, height, diameter, flatten, top_diameter = None):
+    """
+    CadQuery plugin to create a shaft or shaft hole shape.
+
+    :param height: todo
+    :param diameter: todo
+    :param flatten: todo
+    :param top_diameter: When specifying this, a flat top section of this reduced diameter will be 
+        generated so that it has a 45° edge towards the lower outline of full diameter. This allows 
+        to create FDM 3D printable shaft holes, with top_diameter being the printer's max. bridging 
+        distance; the shaft cannot be inserted to the very end of such a hole, obviously, as there 
+        is a conical section at its end.
+    """
+    cq.Workplane.shaft_outline = shaft_outline
+
+    top_height = None
+    if top_diameter is not None:
+        top_height = (diameter - top_diameter) / 2
+        height = height - top_height
+        top_flatten = flatten - (diameter - top_diameter)
+        # When generating a lofted shape, having matching edge counts on outlines helps the 
+        # algorithm to create the desired shape as it can match edges between lower and upper outline.
+        # So we never use a circular upper outline, but one with a very small flattened part.
+        if top_flatten < 0: top_flatten = 0.001
+
+    shaft = (
+        self
+        .shaft_outline(diameter, flatten)
+        .extrude(height)
+    )
+
+    if top_height is not None:
+        shaft = (
+            shaft
+            .faces(">Z").wires().toPending()
+            .workplane(top_height)
+            .shaft_outline(top_diameter, top_flatten)
+            .loft()
+        )
+
+    return self.newObject(shaft.objects)
+
+
+def test_shaft():
+    cq.Workplane.shaft = shaft
+    show_object(cq.Workplane("XY").shaft(height = 25, diameter = 10, flatten = 1.5, top_diameter = 4))
+
+#test_shaft()
+
+
+def bolt_dummy(self, bolt_size, head_size, nut_size, 
+    clamp_length, head_length, nut_length = 0, protruding_length = 0, head_shape = "round"
+):
+    def bolthead(self, size, length, shape = "round"):
+        if shape == "round":
+            return self.newObject(
+                self
+                .circle(size / 2)
+                .extrude(length)
+                .objects
+            )
+        else:
+            # polygon() requires the excircle diameter exd, which we have to calculate from nut size ns:
+            # (1) Nut size ns is twice the height h of the six equilateral triangles making up the 
+            # hexagon: ns = 2 * h
+            # (2) The height of the triangles is, with s the side length of the triangles, according 
+            # to https://math.stackexchange.com/a/1766919 : h = sqrt(3)/2 * s
+            # (3) Resolving (2) for s yields: s = 2 * h / sqrt(3)
+            # (4) Equation (1) in (3) yields: s = ns / sqrt(3)
+            # (5) Excircle diameter is twice the side length s in a regular polygon: exr = 2 * s
+            # (6) Equation (4) in (5) yields: exr = 2 * ns / sqrt(3)
+            #return self.newObject(self.polygon(6, 2 * size / sqrt(3)).extrude(length).objects)
+            return self.newObject(
+                self
+                .polygon(6, 2 * size / sqrt(3))
+                .extrude(length)
+                .objects
+            )
+
+    def nut_if(self, condition, size, length):
+        if condition:
+            nut = self.polygon(6, 2 * size / sqrt(3)).extrude(length) # See bolthead() why size / sqrt(3).
+            return self.newObject(nut.objects)
+        else:
+            return self.newObject([self.findSolid()])
+
+    cq.Workplane.extrude_if = extrude_if
+    cq.Workplane.bolthead = bolthead
+    cq.Workplane.nut_if = nut_if
+
+    # Determine the CadQuery primitive "Plane" object wrapped by the Workplane object. See: 
+    # https://cadquery.readthedocs.io/en/latest/_modules/cadquery/cq.html#Workplane
+    plane = self.plane
+    # Determine local directions to use in selectors. ">Z" and "<Z" string selectors cannot be used 
+    # as they always refer to global coordinates.
+    dir_min_z  = plane.toWorldCoords(( 0, 0,-1))  - plane.toWorldCoords((0,0,0))
+    dir_max_z  = plane.toWorldCoords(( 0, 0, 1))  - plane.toWorldCoords((0,0,0))
+
+    bolt = (
+        self
+        .circle(bolt_size / 2)
+        .extrude(clamp_length / 2, both = True)
+        # Create the bolt head.
+        #.faces(">Z").workplane()
+        .faces(cqs.DirectionMinMaxSelector(dir_max_z)).workplane()
+        .bolthead(head_size, head_length, head_shape)
+        # Create the bolt nut and bolt beyond the nut.
+        # With workplane(), a workplane will be created on the <Z face, with its normal aligned with 
+        # that face's normal, which is essential for the extrusion direction of what follows. Without 
+        # workplane(), the existing workplane will be moved to that face, not changing the normal.
+        #.faces("<Z").workplane()
+        .faces(cqs.DirectionMinMaxSelector(dir_min_z)).workplane()
+        .nut_if(nut_size is not None and nut_length != 0, nut_size, nut_length)
+        #.faces("<Z")
+        .faces(cqs.DirectionMinMaxSelector(dir_min_z))
+        .circle(bolt_size / 2)
+        .extrude_if(protruding_length > 0, protruding_length)
+    )
+
+    return self.newObject(bolt.objects)
+
+
+def test_bolt_dummy():
+    cq.Workplane.bolt_dummy = bolt_dummy
+
+    box = cq.Workplane("XY").box(24,24,24)
+    bolt = cq.Workplane("XZ").bolt_dummy(
+        bolt_size = 6, head_size = 9, nut_size = 9, clamp_length = 20, head_length = 4, 
+        nut_length = 4, protruding_length = 6, head_shape = "round"
+    )
+    show_object(bolt.translate((0,0,20)))
+    show_object(box.cut(bolt))
+
+#test_bolt_dummy()
