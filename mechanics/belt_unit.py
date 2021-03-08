@@ -12,7 +12,7 @@ importlib.reload(utilities)
 
 # In addition to importing whole packages as neededfor importlib.reload(), import some names.
 
-class Belt:
+class BeltUnit:
     def __init__ (self,workplane,measures):
         """
          :param measures : measurement of the bracket:
@@ -407,30 +407,30 @@ cq.Workplane.part = utilities.part
 union_results = False
 show_options = {"color": "grey", "alpha": 0}
 measures = dict(
-        belt_width                 = 50,  #desired belt width 
-        bracket_height             = 35,  #height of the brackt
-        bracket_length             = 150, #total length of the bracket
-        material_thickness_bracket = 3,   #material thickness of sides, belt rest and connection plate
-        material_thickness_other   = 1.5, #material thickness of anything else
-        bearing_diameter           = 24,  #outer diameter of ball bearings. Set zero if none
-        bearing_thickness          = 10,   #thickness of the bearing. Set 0 if none
-        bolt_size                  = 6,   #bolt size (DIN) of mounting bolts
-        axis_diameter              = 5,   #diameter of axes not being the motor axis
-        axis_slide_depth           = 20,  #length of sliding gap for roller that can be used for tightening belt
-        motor_axis_edges           = 2,   #number of flat sides on motor axis (0,1 or 2)
-        motor_axis_diameter_major  = 5,   #major diameter of motor axis
-        motor_axis_diameter_minor  = 4,   #minor diameter of motor axis. Ignored if number of flat sides = 0
-        motor_axis_length          = 30,  #depth of motor axis in roller 
-        roller_diameter            = 40,  #diameter of the rollers
-        roller_friction_edge       = 1,   #create edge to reduce friction between roller and bracket (0 = no, 1 = yes)        
-        roller_gap                 = 1,   #gap between roller and bracket, 1mm should be enough
-        roller_belt_edge_width     = 1,   #width of edges on the roller to keep belt in place
-        roller_belt_edge_height    = 2,   #height of edges on the roller to keep belt in place
-        tensioner_bolt_size        = 4    #bolt size (DIN) for tensioner 
-        )
+    belt_width                 = 50,  #desired belt width 
+    bracket_height             = 35,  #height of the brackt
+    bracket_length             = 150, #total length of the bracket
+    material_thickness_bracket = 3,   #material thickness of sides, belt rest and connection plate
+    material_thickness_other   = 1.5, #material thickness of anything else
+    bearing_diameter           = 24,  #outer diameter of ball bearings. Set zero if none
+    bearing_thickness          = 10,   #thickness of the bearing. Set 0 if none
+    bolt_size                  = 6,   #bolt size (DIN) of mounting bolts
+    axis_diameter              = 5,   #diameter of axes not being the motor axis
+    axis_slide_depth           = 20,  #length of sliding gap for roller that can be used for tightening belt
+    motor_axis_edges           = 2,   #number of flat sides on motor axis (0,1 or 2)
+    motor_axis_diameter_major  = 5,   #major diameter of motor axis
+    motor_axis_diameter_minor  = 4,   #minor diameter of motor axis. Ignored if number of flat sides = 0
+    motor_axis_length          = 30,  #depth of motor axis in roller 
+    roller_diameter            = 40,  #diameter of the rollers
+    roller_friction_edge       = 1,   #create edge to reduce friction between roller and bracket (0 = no, 1 = yes)        
+    roller_gap                 = 1,   #gap between roller and bracket, 1mm should be enough
+    roller_belt_edge_width     = 1,   #width of edges on the roller to keep belt in place
+    roller_belt_edge_height    = 2,   #height of edges on the roller to keep belt in place
+    tensioner_bolt_size        = 4    #bolt size (DIN) for tensioner 
+)
 
-    # Create case as a Case object to get access to its parts.
-belt = Belt(cq.Workplane("XY"), measures)
+# Create case as a Case object to get access to its parts.
+belt = BeltUnit(cq.Workplane("XY"), measures)
     
 show_object(belt.belt_bracket_motor,   name = "belt_bracket_motor",   options = show_options)
 show_object(belt.belt_bracket_roller,  name = "belt_bracket_roller",  options = show_options)
