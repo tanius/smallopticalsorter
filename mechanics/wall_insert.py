@@ -21,8 +21,10 @@ class WallInsert:
 
     def __init__(self, workplane, measures):
         """
-        A parametric, grooved wall element that can be integrated into thin panel walls.
+        A parametric, grooved wall element that can be integrated into panel walls.
 
+        .. todo: Since this is not a part that can be used as it is, it should rather be 
+            implemented as a CadQuery plugin.
         .. todo:: Parameter documentation.
         .. todo:: Add parameters for edge and corner rounding.
         """

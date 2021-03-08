@@ -135,6 +135,45 @@ def optionalPolarLine(self, length, angle):
         return self.polarLine(length, angle)
 
 
+def optional_chamfer(self, length):
+    """
+    CadQuery plugin that creates a chamfer, or does nothing if any chamfering length is zero.
+
+    :param length: An int, float or tuple. A number specifies the chamfer side length of a 
+        symetrical chamfer, like CadQuery's `Workplane.chamfer(length)`. A tuple specifies the side 
+        lengths of the first and second chamfer lengths of a non-symmetrical chamfer. The first 
+        length is the first one encountered in a CCW rotation when looking in parallel of the edge 
+        to chamfer, from the positive axis side. This is equivalent to CadQuery's 
+        `Workplane.chamfer(length, length2)`.
+    """
+    if isinstance(length, int) or isinstance(length, float):
+        if float(length) == 0.0:
+            return self.newObject([self.findSolid()])
+        else:
+            return self.newObject(self.chamfer(length).objects)
+
+    elif isinstance(length, tuple):
+        if float(length[0]) == 0 or float(length[1]) == 0:
+            return self.newObject([self.findSolid()])
+        else:
+            return self.newObject(self.chamfer(length = length[0], length2 = length[1]).objects)
+
+
+def test_optional_chamfer():
+    cq.Workplane.optional_chamfer = optional_chamfer
+    model = (
+        cq.Workplane("XY")
+        .box(24, 24, 6)
+        .edges("|Z and >X and >Y").optional_chamfer(0)
+        .edges("|Z and <X and >Y").optional_chamfer((0, 0))
+        .edges("|Z and <X and <Y").optional_chamfer((6, 0))
+        .edges("|Z and >X and <Y").optional_chamfer((6, 3))
+    )
+    show_object(model)
+
+#test_optional_chamfer()
+
+
 def sagittaArcOrLine(self, endPoint, sag):
     """
     CadQuery plugin that creates an arc that can also be a straight line, unlike with the CadQuery 
