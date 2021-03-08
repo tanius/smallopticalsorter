@@ -157,6 +157,16 @@ class MotorMount:
             .faces("<Z[-2]")
             .edges("<X or >X")
             .chamfer(m.motor_chamfer)
+
+            # Add a chamfer around the lower edge to remove sharp edges and corners.
+            .faces("<Z")
+            .edges()
+            .chamfer(m.lower_chamfer)
+
+            # Add a chamfer around the upper edge to remove sharp edges and corners.
+            .faces(">Z")
+            .edges()
+            .chamfer(m.upper_chamfer)
         )
 
 
@@ -166,23 +176,28 @@ class MotorMount:
 cq.Workplane.part = utilities.part
 
 measures = Measures(
-    motor_width = 60, # For NEMA23
-    motor_height = 60, # For NEMA23
-    motor_depth = 80,
-    motor_chamfer = 5,
-    wall_thickness = 4,
+    motor_width = 42.8, # NEMA17: 42.3; NEMA23: 60
+    motor_height = 42.3, # NEMA17: 42.3; NEMA23: 60
+    motor_depth = 40.5,
+    motor_chamfer = 3, # NEMA17: not standardized, but 4 mm is typical
+    wall_thickness = 2.4, # 2.4 mm = 6 shells; next option 3.2 mm = 8 shells
+    # Chamfer around the bottommost edges. Must be smaller than 0.5 * wall_thickness.
+    # When using this, print with a brim to prevent adhesion issues for the brackets.
+    lower_chamfer = 0.8,
+    # Chamfer around the topmost edges. Must be smaller than 0.5 * wall_thickness.
+    upper_chamfer = 0.8,
     faceplate = Measures(
         # rectangular distance between stepper mounting holes (NEMA 23 = 47.1)
-        mounthole_distance = 47.1,
-        mounthole_diameter = 5.0,
-        mainhole_diameter = 28.2,
-        mainhole_cbore_diameter = 40.0, 
+        mounthole_distance = 31.0, # NEMA17: 31.0; NEMA23: 47.1
+        mounthole_diameter = 3.5, # NEMA17: 3.5 for M3; NEMA23: 5.0 for M4
+        mainhole_diameter = 22.1, # NEMA17: ≥5.0; NEMA23: TODO
+        mainhole_cbore_diameter = 22.1, # NEMA17: 22.0; NEMA23: 40.0
         mainhole_cbore_depth = 2.0
     ),
     brackets = Measures(
-        width = 25,
+        width = 20,
         hole_count = 2,
-        hole_diameter = 4.5,
+        hole_diameter = 3.3, # hole for M3
         fillet_radius = 7
     )
 )
