@@ -7,3 +7,6 @@ __pycache__
 # Ignore documentation files that can be auto-generated from 3D designs.
 /doc/*.png
 /doc/*.stl
+
+# Ignore build process output.
+/build/
