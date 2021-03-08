@@ -12,7 +12,7 @@ importlib.reload(utilities)
 
 # In addition to importing whole packages as neededfor importlib.reload(), import some names.
 
-class BeltUnit:
+class ConveyorUnit:
     def __init__ (self,workplane,measures):
         """
          :param measures : measurement of the bracket:
@@ -430,7 +430,7 @@ measures = dict(
 )
 
 # Create case as a Case object to get access to its parts.
-belt = BeltUnit(cq.Workplane("XY"), measures)
+belt = ConveyorUnit(cq.Workplane("XY"), measures)
     
 show_object(belt.belt_bracket_motor,   name = "belt_bracket_motor",   options = show_options)
 show_object(belt.belt_bracket_roller,  name = "belt_bracket_roller",  options = show_options)
