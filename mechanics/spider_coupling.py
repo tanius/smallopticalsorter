@@ -91,7 +91,7 @@ class SpiderCoupling:
                     height = m.base_height - 1, # Leave 1 mm solid wall above the shaft hole.
                     diameter = m.shaft.diameter, 
                     flatten = m.shaft.flatten, 
-                    top_diameter = 4 # Assume 4 mm as an FDM printer's bridging distance.
+                    top_diameter = 2.5 # Assume 2.5 mm as an FDM printer's bridging distance.
                 )
             )
         )
@@ -174,23 +174,23 @@ class SpiderCoupling:
 cq.Workplane.part = utilities.part
 
 measures = Measures(
-    diameter = 30,
-    base_height = 24,
+    diameter = 20.0,
+    base_height = 20.0,
     clamp_gap = 1.5,
     cogs = Measures(
         count = 4, # Can only be 4 or 6 so far due to a bug.
-        height = 12,
+        height = 6.0,
         gap_angle = 3
     ),
     shaft = Measures(
-        diameter = 8,
-        flatten = 1.5
+        diameter = 5.0,
+        flatten = 0.0
     ),
     bolts = Measures(
-        hole_size = 4.3,
-        headhole_size = 7.3,
-        nuthole_size = 7.3, # M4 nut size is 7.0 mm.
-        clamp_length = 10
+        hole_size = 4.2,
+        headhole_size = 7.2,
+        nuthole_size = 7.2, # M4 nut size is 7.0 mm.
+        clamp_length = 6.0
     )
 )
 show_options = {"color": "lightgray", "alpha": 0}
