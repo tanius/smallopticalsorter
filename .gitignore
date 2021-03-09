@@ -1,6 +1,9 @@
 # Ignore Python cache files, created by CQ-editor while editing CadQuery files.
 __pycache__
 
+# Ignore IDE configuration files.
+/.vscode/
+
 # Ignore lossless versions of the training images for size reasons for now (>600 MiB).
 /classifier-trainingdata-png-IGNORED/
 

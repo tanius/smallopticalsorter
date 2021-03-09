@@ -1,6 +1,6 @@
 import cadquery as cq
 import cadquery.selectors as cqs
-from math import sin, cos, radians, sqrt
+from math import sqrt, pi, sin, cos, radians, degrees
 import logging
 from types import SimpleNamespace
 from OCP.gp import gp_Pnt
@@ -65,7 +65,7 @@ def circlePoint(radius, angle):
 
 def attr_names(obj):
     """
-    Determine the names of user-defined attributes of the given SimpleName object.
+    Determine the names of user-defined attributes of the given SimpleNamespace object.
     Source: https://stackoverflow.com/a/27532110
 
     :return: A list of strings.
@@ -988,13 +988,15 @@ def ifelse(self, condition, then_method, then_args, else_method, else_args):
     are provided as part of this library.
 
     :param condition: The condition that has to be met to execute the specified method call.
-    :param method: Name of the Workplane class' method to execute if the condition applies. This 
+    :param then_method: Name of the Workplane class' method to execute if the condition applies. This 
         has to be provided as a string, as there is no variable referencing the current state of 
         a chained fluent API call before that chained call has been evaluated completely.
-    :param *pos_args: Positional arguments to be provided to the specified method. Write them 
-        one after another just as you would in an actual call of that method.
-    :param *kw_args: Keyword arguments to be provided to the specified method. Write them 
-        one after another just as you would in an actual call of that method.
+    :param then_args: Hash with keyword arguments to be provided to the specified method flor the 
+        "then" case.
+    :param else_method: Name of the Workplane class' method to execute if the condition applies. This 
+        has to be provided as a string (see on then_method for details).
+    :param else_args: Hash with keyword arguments to be provided to the specified method for the 
+        "else" case.
 
     .. todo:: Move this to a file with CadQuery experiments. It's not suitable for practical use.
     .. todo:: Allow to also provide positional parameters, not just keyword parameters, to the 
@@ -1676,3 +1678,51 @@ def test_bolt_dummy():
     show_object(box.cut(bolt))
 
 #test_bolt_dummy()
+
+
+def distribute_circular(self, distributable, radius, copies, align):
+    """
+    CadQuery plugin that can distribute copies of a given object in a circle, placing them at the 
+    centers of a regular polygon and optionally aligning them to face the center.
+
+    :param distributable: A CadQuery Workplane object containing the solid to distribute on its stack.
+    :param radius: Circumradius of the regular polygon to use for distributing the object.
+    :param copies: The number of copies to distribute around the circle.
+    :param align: Alignment type. Either "default" to use the original orientation of the 
+        distributable object, or "center" to let every copy of the object face the center.
+    """
+    log = logging.getLogger(__name__)
+
+    # Determine the CadQuery primitive "Plane" object wrapped by the Workplane object. See: 
+    # https://cadquery.readthedocs.io/en/latest/_modules/cadquery/cq.html#Workplane
+    plane = self.plane
+
+    # Positions and rotations for the distributable object when placed at the corners of a regular polygon.
+    # Consists of a list of (x, y, center_angle) elements, using local coordinates and degrees.
+    transformations = []
+    for corner_num in range(copies): # Range 0 to copies - 1.
+        delta_angle = 2 * pi / copies # Center angle between two corners. In radians.
+        corner_angle = delta_angle * corner_num
+        transformation = (
+            cos(corner_angle) * radius,
+            sin(corner_angle) * radius,
+            degrees(corner_angle)
+        )
+        transformations.append(transformation)
+        # log.info("new position: %s", position)
+
+    # Collect a translated and rotated copy of the distributable object for every corner.
+    result = self
+    for t in transformations:
+        angle = t[2] if align == "center" else 0
+        position = plane.toWorldCoords((t[0], t[1], 0))
+
+        result = result.union(
+            distributable
+            .rotate((0, 0, -1), (0, 0, 1), angle)
+            .translate(cq.Vector(position))
+        )
+
+    # In CadQuery plugins, it is good practice to not modify self, but to return a new object linked 
+    # to self as a parent: https://cadquery.readthedocs.io/en/latest/extending.html#preserving-the-chain
+    return self.newObject(result.objects)
