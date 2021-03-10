@@ -1404,6 +1404,12 @@ def angle_sector(self, radius, start_angle, stop_angle, forConstruction = False)
     A CadQuery plugin to create a 2D circle sector based on two angles, for each element on the 
     stack. The elements on the stack are converted to points, which are then used as the centers 
     for creating the sectors.
+
+    .. todo:: Fix that the numerically smaller angle is always used as the start angle, independent 
+        of which angle is given for the start_angle and which is given for the stop_angle 
+        parameter. So when specifying "start_angle = 270, stop_angle = 90", this is interpreted as 
+        "start_angle = 90, stop_angle = 270" and one has to use the workaround 
+        "start_angle = -90, stop_angle = 90" to get the desired effect.
     """
 
     center_angle = (start_angle + stop_angle) / 2
@@ -1516,22 +1522,21 @@ def shaft_outline(self, diameter, flatten = 0):
 
     # Case for a circular shaft outline.
     if flatten == 0:
-        return self.newObject(self.circle(radius).objects)
+        outline = self.newObject(self.circle(radius).objects)
     
     # Case for a D-shaped shaft outline.
-
-    flatten_start_x = radius - flatten
-    flatten_start_y = sqrt(radius ** 2 - (radius - flatten) ** 2) # Applied Pythagoras.
-    flatten_start_point = (flatten_start_x,  flatten_start_y)
-    flatten_end_point =   (flatten_start_x, -flatten_start_y)
-
-    outline = (
-        self
-        .newObject(self.objects)
-        .moveTo(*flatten_start_point)
-        .threePointArc((-radius, 0), flatten_end_point)
-        .close()
-    )
+    else:
+        flatten_start_x = radius - flatten
+        flatten_start_y = sqrt(radius ** 2 - (radius - flatten) ** 2) # Applied Pythagoras.
+        flatten_start_point = (flatten_start_x,  flatten_start_y)
+        flatten_end_point =   (flatten_start_x, -flatten_start_y)
+        outline = (
+            self
+            .newObject(self.objects)
+            .moveTo(*flatten_start_point)
+            .threePointArc((-radius, 0), flatten_end_point)
+            .close()
+        )
 
     return outline
 
@@ -1726,3 +1731,12 @@ def distribute_circular(self, distributable, radius, copies, align):
     # In CadQuery plugins, it is good practice to not modify self, but to return a new object linked 
     # to self as a parent: https://cadquery.readthedocs.io/en/latest/extending.html#preserving-the-chain
     return self.newObject(result.objects)
+
+
+def toTuple2D(self):
+    """
+    Extension for cadquery.Vector that provides a 2D tuple rather than a 3D tuple as provided by 
+    Vector.toTuple().
+    """
+    tuple_3d = self.toTuple()
+    return (tuple_3d[0], tuple_3d[1])
