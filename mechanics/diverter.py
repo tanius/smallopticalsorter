@@ -15,6 +15,12 @@ class Diverter:
         """
         A parametric rotary object diverter to be mounted over conveyor units.
 
+        This can be mounted with the axis exactly vertical (as seen in the default measures), in 
+        which case the conveyor belt has to end below the axle so that the diverter does not 
+        interfere with the belt itself. Alternatively, esp. for low height objects, you can also 
+        mount the axle slightly inclined against the direction of movement, and compensate by 
+        giving the shovel tops the same inclination.
+
         :param workplane: The CadQuery workplane to create this part on.
         :param measures: The measures to use for the parameters of this design. Expects a nested 
             [SimpleNamespace](https://docs.python.org/3/library/types.html#types.SimpleNamespace) 
@@ -25,11 +31,10 @@ class Diverter:
                 connecting its edges.
             - **``shovel.inclination``:** Angle in radial direction against vertical. Positive 
                 angle lean towards the center, negative away from it.
+            - TODO: Add the documentation of the remaining measures.
 
-        .. todo:: Add the shaft mount.
-        .. todo:: Use rectangular through-holes for dropping in nuts into the right half of the 
-            shaft collar. Less fiddly than hexagonal holes from the back. And removing less material.
         .. todo:: Move calculations of derived measures into the initializer.
+        .. todo:: Use fillets on the sharp edges of the shaft collar.
         .. todo:: Fix that the upper wire of the shovels does not reach in radially inside as much as 
             it should. That is because it is drawn on an inclined plane, which shortens its 
             effective radial length. When placing a cylinder into the center that should fill the 
@@ -65,6 +70,8 @@ class Diverter:
     def build_collar(self, half = "right", clamp_gap = 0.0):
         m = self.measures
         outer_r = m.shaft.collar_outer_diameter / 2
+        # To provide wiggling space for mounting, the loose part of the collar has to be smaller.
+        if half == "left": outer_r -= 1.5
         inner_r = m.shaft.collar_inner_diameter / 2
         clamp_gap_offset = clamp_gap if half == "right" else -clamp_gap
         # Due to a bug in utilities.angle_sector, the numerically smaller angle is always used as 
@@ -268,27 +275,31 @@ measures = Measures(
     baseplate = Measures(
         diameter = 90.0,
         thickness = 3.0,
-        inclination = 22.5
+        inclination = 0
     ),
     shovels = Measures(
         count = 6,
-        height = 30.0,
-        size = 18.0,
+        height = 38.0,
+        size = 20.0,
         cavity = 4.0
     ),
     shaft = Measures(
         diameter = 5.0,
         flatten = 0.01, # TODO: Fix that this cannot be 0 due to a bug in utilities.shaft_shape.
-        collar_outer_diameter = 54.0,
+        clamp_gap = 1.0,
         collar_inner_diameter = 8.0,
-        collar_outer_height = 6.5,
+        collar_outer_diameter = 50.5,
         collar_inner_height = 15.0,
-        clamp_gap = 1.5
+        # TODO: Fix that this cannot be the same as collar_inner_height due to a CAD kernel bug 
+        # when doing "zero-volume lofting". For some values, this works, and for some it leads 
+        # to an infinite loop and exhausting the memory. In this case, a plain cylinder should be 
+        # created instead.
+        collar_outer_height = 14.99
     ),
     bolts = Measures(
         hole_size = 3.2,
-        hole_position_radial = 13.5,
-        hole_position_vertical = 4.0,
+        hole_position_radial = 9.0,
+        hole_position_vertical = 7.5,
         headhole_size = 5.65,
         nuthole_width = 5.65, # M3 nut size between flats is 5.5 mm.
         nuthole_depth = 2.45, # M3 nut height is 2.3 mm.

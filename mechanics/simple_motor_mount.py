@@ -34,7 +34,7 @@ class MotorMount:
             - **``brackets.hole_diameter``:** todo
             - **``brackets.fillet_radius``:** todo
 
-        .. todo:: Reimplement the construction of the wall mount brackets, using bracket() from 
+        .. todo:: Reimplement the construction of the wall mount brackets using bracket() from 
             utilities.py.
         .. todo:: Build the object into the opposite y direction, so that its faceplate faces 
             into the "front" (positive y) direction.

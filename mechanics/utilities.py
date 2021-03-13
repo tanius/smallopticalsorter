@@ -1189,10 +1189,12 @@ def bracket(self, thickness, height, width, offset = 0, angle = 90,
     x axis pointing along the edge along which to build the bracket and (4) has its y axis pointing 
     away from the center of the face on which to build the bracket.
 
-    :param …: todo
+    :param …: TODO
 
     .. todo:: Support to create only one hole in the bracket. Currently this results in "division 
-        by float zero".
+        by float zero". However, with offset = 0 sometimes just a single hole is created.
+    .. todo:: Fix that the offset parameter does not work as expected. It will add the hole offset 
+        only from one edge, not both.
     .. todo:: Change the edge filleting so that it is done before cutting the holes, and so that 
         the holes are only cut into the non-filleted space. Otherwise the OCCT will often refuse, 
         as the fillet would interfere with an existing hole.
@@ -1206,13 +1208,20 @@ def bracket(self, thickness, height, width, offset = 0, angle = 90,
     .. todo:: Make it possible to pass in two different lengths for the chamfer. That will allow 
         to create a better support of the core below it, where needed.
     .. todo:: Implement behavior for the angle parameter.
-    .. todo:: Implement behavior for the offset parameter.
     .. todo:: Fix that the automatic hole positioning algorithm in hole_coordinates() does not work 
         well when the bracket's footprint is approaching square shape, or higher than wide.
-    .. todo: Let this plugin determine its workplane by itself from the edge and face provided as 
+    .. todo:: Let this plugin determine its workplane by itself from the edge and face provided as 
         the top and second from top stack elements when called. That is however difficult because 
         the workplane has to be rotated so that the y axis points away from the center of the face 
         on which the bracket is being built.
+    .. todo:: Perhaps let this plugin take an edge from the stack and create a bracket along it. 
+        Would be easier than providing a workplane as specified now, but might limit its use since 
+        sometimes a bracket is needed that does not simply go along a straight edge.
+    .. todo:: Leave the cq.Workplane class in the same state as finding it. So if there was no 
+        plugin fillet_if() or chamfer_if() registered at the start of the plugin, de-register these 
+        again after using them in here. If one was registered, it might be something else by the 
+        same name. So it should be renamed temporarily and that state should be restored at the 
+        end.
     """
 
     def hole_coordinates(width, height, hole_count):
