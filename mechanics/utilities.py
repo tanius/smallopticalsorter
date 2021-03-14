@@ -1116,9 +1116,9 @@ def show_local_axes(self, length = 20):
     """
     A CadQuery plugin to visualize the local coordinate system as a help for debugging.
 
-    .. todo:: Fix that this plugin cannot be imported from another file, as then the error 
-        message will be "name show_object is not defined", as that other file is not opened in 
-        cq-editor.
+    .. todo:: Fix that this plugin cannot be imported to another file, as then the error 
+        message will be "name show_object is not defined", as this file utilities.py is not open in 
+        cq-editor. To use this, right now you have to copy the code to your file.
     .. todo:: Allow to specify a prefix for the show_object() name to show.
     .. todo:: Render arrowheads at the tops of the axes, as seen in cq-editor.
     .. todo:: Render a small white sphere at the center of the axes, as seen in cq-editor itself.
@@ -1263,7 +1263,7 @@ def bracket(self, thickness, height, width, offset = 0, angle = 90,
     # 
     # We want to convert a direction from local to global coordinates, not a point. A 
     # direction is not affected by coordinate system offsetting, so we have to undo that 
-    # offset by subtracting the converte origin.
+    # offset by subtracting the converted origin.
     #
     # todo: Put these as lambdas / functions into the global namespace of this file, as they are 
     #     generally useful.

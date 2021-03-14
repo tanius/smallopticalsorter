@@ -179,7 +179,9 @@ measures = Measures(
         # No upper corner radius here, as that corner is flat against a wall and won't hurt anyone.
         # And without that corner radius, printing it with its front face down becomes possible.
         upper = 0.0,
-        case = 4.5, # Best value. Tested: 3.0, 4.0, 4.5, 4.99.
+        # The case's inner ege radius is 4.0 mm. Tested: 3.0, 4.0, 4.5, 5.0. For proper testing 
+        # always print the filleted edge facing to the top, as otherwise the shape is bent, even with support.
+        case = 4.0,
         lower = 0.0
     ),
     ramp_1 = Measures(
