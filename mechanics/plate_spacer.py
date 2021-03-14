@@ -10,7 +10,7 @@ importlib.reload(utilities)
 log = logging.getLogger(__name__)
 
 
-class PlateGuideSpacer:
+class PlateSpacer:
 
     def __init__(self, workplane, measures):
         """
@@ -24,21 +24,19 @@ class PlateGuideSpacer:
             object, which may have the following attributes:
             - **``TODO``:** TODO
 
-        .. todo:: Sink in the bolt holes 1 mm more. That allows to use standard M3×10 bolts with 
-            a washer and nut on the outside, and the bolt will emerge 1 mm over the nut.
         .. todo:: Once we have a way to cut bolts to custom lengths, embed the nut into the 
             spacer and run a custom length bolt through the case wall so that it ends just flush 
             with the spacer's surface. That way, all bolts go into the case, with no nuts visible 
-            on the outside. Also, no wrench is needed for assembly then.
-        .. todo:: If necessary, add a little bending radius to the whole back face, to allow 
-            mounting it under pressure with the bolt. Otherwise the upper edge might have a small 
-            gap from the case wall, if the case wall is not exactly plane. Not needed so far.
+            on the outside. Also, no wrench is needed for assembly then. However, the current 
+            solution of counterbored and countersunk holes is also quite nice, and allows to use 
+            a standard 10 mm bolt with the chosen case.
         .. todo:: Add parameters for a grid with multiple rows and columns of mount holes, and 
             parameters to position them.
         """
 
         cq.Workplane.fillet_if = utilities.fillet_if
         cq.Workplane.chamfer_if = utilities.chamfer_if
+        cq.Workplane.cbore_csk_hole = utilities.cbore_csk_hole
 
         self.model = workplane
         self.debug = False
@@ -121,15 +119,19 @@ class PlateGuideSpacer:
             .center(*mounthole_origin_offset) # Move origin to reference position in the lower back corner.
             .tag("mounthole_plane")
             .center(m.hole_1.horizontal_pos, m.hole_1.vertical_pos) # Measure hole position from reference.
-            .cskHole(
-                diameter = m.hole_1.diameter, 
+            .cbore_csk_hole(
+                diameter = m.hole_1.diameter,
+                cboreDiameter = m.hole_1.head_diameter,
+                cboreDepth = m.hole_1.counterbore_depth,
                 cskDiameter = m.hole_1.head_diameter, 
                 cskAngle = m.hole_1.head_angle
             )
             .workplaneFromTagged("mounthole_plane")
             .center(m.hole_2.horizontal_pos, m.hole_2.vertical_pos) # Measure hole position from reference.
-            .cskHole(
-                diameter = m.hole_2.diameter, 
+            .cbore_csk_hole(
+                diameter = m.hole_2.diameter,
+                cboreDiameter = m.hole_2.head_diameter,
+                cboreDepth = m.hole_2.counterbore_depth,
                 cskDiameter = m.hole_2.head_diameter, 
                 cskAngle = m.hole_2.head_angle
             )
@@ -141,7 +143,8 @@ class PlateGuideSpacer:
 # =============================================================================
 cq.Workplane.part = utilities.part
 
-# Orientation is as if looking from the center of the guided plate.
+# Variable names refer to a part orientation as if looking from the center of the guided plate 
+# towards the part, with the top of the guide plate being the edge inserted last.
 
 height = 100.0
 
@@ -153,13 +156,18 @@ top_edge_to_part = 20.0
 top_edge_to_hole_1 = 40.85
 inner_wall_to_holes = 18.0
 
-# Calculate the diameter of a countersunk hole for a M3 DIN 7991 bolt.
-# A DIN 7991 M3 countersunk bolt head is 6.1 mm in diameter. It is not angled all the way but instead 
-# has a 0.6 mm cylindrical section at its top. We can only easily create conical holes (and that is 
-# good enough), so we need a conical hole with 90° opening angle that is 0.6 mm deeper than a 
-# hole with 6.1 mm diameter. For that, we have to increase the radius by 0.6 mm as well as it's 
-# a 90-45-45 triangle.
-head_hole_diameter = 6.1 + 2 * 0.6
+head_diameter = 6.1 # A DIN 7991 M3 countersunk bolt head is 6.1 mm in diameter.
+head_hole_additional_radius = 0.2 # Chosen for comfortable mounting.
+head_hole_diameter = 6.1 + 2 * head_hole_additional_radius
+# With a 90° countersink head angle like here, increasing the hole radius sinks in the bolt head 
+# by the same amount. (Oberve the 45-90-45 triangle between head center, hole radius and cone tip.)
+countersink_excess_depth = head_hole_additional_radius
+
+# A counterunk DIN 7991 M3 bolt has a 0.6 mm thick cylindrical section at the very top of its head.
+# To sink this in, you either need a counterbore hole and / or a deeper countersink hole.
+head_cylindrical_height = 0.6
+head_to_surface = 1.0 # Intended depth of sinking the head below the surface of the hole.
+counterbore_depth = head_to_surface + head_cylindrical_height - countersink_excess_depth
 
 measures = Measures(
     # Type does not matter, as we create the part symmetrical so that it can be used on both sides.
@@ -171,7 +179,7 @@ measures = Measures(
         # No upper corner radius here, as that corner is flat against a wall and won't hurt anyone.
         # And without that corner radius, printing it with its front face down becomes possible.
         upper = 0.0,
-        case = 4.99, # Corrected from 3.0 and then from 4.0 after tets prints.
+        case = 4.5, # Best value. Tested: 3.0, 4.0, 4.5, 4.99.
         lower = 0.0
     ),
     ramp_1 = Measures(
@@ -187,7 +195,8 @@ measures = Measures(
         horizontal_pos = inner_wall_to_holes,
         vertical_pos = height - (top_edge_to_hole_1 - top_edge_to_part), # From bottom end of part.
         head_diameter = head_hole_diameter,
-        head_angle = 90 # As per DIN 7991 for M20 and smaller.
+        head_angle = 90, # As per DIN 7991 for M20 and smaller.
+        counterbore_depth = counterbore_depth
     ),
     # hole_2 is symmetrical to hole_1, to make this part usable for both right and left.
     hole_2 = Measures(
@@ -195,10 +204,16 @@ measures = Measures(
         horizontal_pos = inner_wall_to_holes, # From case wall surface.
         vertical_pos = top_edge_to_hole_1 - top_edge_to_part, # From bottom end of part.
         head_diameter = head_hole_diameter,
-        head_angle = 90
+        head_angle = 90,
+        counterbore_depth = counterbore_depth
     )
 )
 show_options = {"color": "lightgray", "alpha": 0}
 
-plate_guide_spacer = cq.Workplane("XY").part(PlateGuideSpacer, measures)
-show_object(plate_guide_spacer, name = "plate_guide_spacer", options = show_options)
+plate_spacer = cq.Workplane("XY").part(PlateSpacer, measures)
+show_object(plate_spacer, name = "plate_spacer", options = show_options)
+
+# 3D printing hints:
+# Print with the ramp facing down. That way, you'll need support for the ramp, but no support for 
+# the edge fillet. The latter would not work well, as support for very low overhangs cannot be 
+# provided, leading to a not-very-round fillet.

@@ -1,6 +1,6 @@
 import cadquery as cq
 import cadquery.selectors as cqs
-from math import sqrt, pi, sin, cos, radians, degrees
+from math import sqrt, pi, sin, cos, tan, radians, degrees
 import logging
 from types import SimpleNamespace
 from OCP.gp import gp_Pnt
@@ -1759,3 +1759,78 @@ def toTuple2D(self):
     """
     tuple_3d = self.toTuple()
     return (tuple_3d[0], tuple_3d[1])
+
+
+def cbore_csk_hole(self, diameter, cboreDiameter, cboreDepth, cskDiameter, cskAngle, depth = None, clean = True):
+    """
+    CadQuery plugin that combines counterbored and countersunk holes into one. It allows to create 
+    a hole starting with a cylindrical counterbore, then having a conical countersunk hole, then 
+    having the hole for the bolt shaft.
+
+    The surface of the hole is at the current workplane. One hole is created for each item on the 
+    stack. With this plugin, both Workplane::cskHole() and Workplane::cboreHole() are unnecessary.
+    (At least after teaching this plugin to work with zero depth for either counterbore or countersink.)
+
+    :param diameter: The diameter of the hole for the bolt shaft.
+    :param cboreDiameter: The diameter of the cylindrical counterbore hole.
+    :param cboreDepth: The depth of the cylinrical counterbore hole.
+    :param cskDiameter: The diameter of the conical countersink hole.
+    :param cskAngle: The angle (in degrees) of the conical countersink hole, corresponding to the 
+        angle at the (imagined) cone tip. Typical values are 90° for metric bolts an 82° for imperial.
+    :param depth: The complete depth of the hole, including the counterbore and countersink. Use 
+        0 or None to drill thrugh the entire part.
+    :param clean: Whether to call `Workplane::clean()` afterwards to have a clean shape.
+
+    .. todo:: Implement that this plugin can produce also pure counterbore holes or pure countersunk holes.
+    """
+
+    if depth is None:
+        depth = self.largestDimension()
+
+    center = cq.Vector()
+    boreDir = cq.Vector(0, 0, -1)
+    csk_position = cq.Location(cq.Vector(0, 0, - cboreDepth))
+
+    # Create the hole shape.
+    hole = cq.Solid.makeCylinder(
+        diameter / 2.0, depth, center, boreDir  # Uses local coordinates!
+    )
+
+    # Create and position the countersink cone shape.
+    csk_radius = cskDiameter / 2.0
+    csk_height = csk_radius / tan(radians(cskAngle / 2.0))
+    csk = (
+        cq.Solid
+        .makeCone(csk_radius, 0.0, csk_height, center, boreDir)
+        .moved(csk_position)
+    )
+
+    # Create the counterbore shape.
+    cbore = cq.Solid.makeCylinder(cboreDiameter / 2.0, cboreDepth, center, boreDir)
+
+    # Fuse everything together.
+    cutter = hole.fuse(cbore).fuse(csk)
+
+    # Use the cutter shape to cut every item on the stack.
+    return self.cutEach(lambda loc: cutter.moved(loc), True, clean)
+
+
+def test_cbore_csk_hole():
+    cq.Workplane.cbore_csk_hole = cbore_csk_hole
+
+    result = (
+        cq.Workplane("XY")
+        .box(24,24,24)
+        .faces(">Z")
+        .workplane()
+        .cbore_csk_hole(
+            diameter = 4,
+            cboreDiameter = 8,
+            cboreDepth = 4,
+            cskDiameter = 6,
+            cskAngle = 90
+        )
+    )
+    show_object(result)
+
+#test_cbore_csk_hole()
