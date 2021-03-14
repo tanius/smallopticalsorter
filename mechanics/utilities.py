@@ -1288,23 +1288,32 @@ def bracket(self, thickness, height, width, offset = 0, angle = 90,
             # global coordinates, we have to use converted ones.
             .translate_last(dir_max_z * (height / 2))
         )
+    )
 
-        # Cut the hole pattern into the bracket.
-        # It's much easier to transform the workplane rather than creating a new one. Because for 
-        # a new workplane, z and x are initially aligned with respect to global coordinates, so the 
-        # coordinate system would have to be rotated for our needs, which is complex. Here we modify 
-        # the workplane to originate in the local bottom left corner of the bracket base shape.
-        .transformed(offset = (-width / 2, 0), rotate = (90,0,0))
-        .pushPoints(hole_coordinates(width, height, hole_count))
-        .circle(hole_diameter / 2)
-        .cutThruAll()
+    # Cut the hole pattern into the bracket.
+    # TODO: If we had a circle_for_vertices() plugin that would only create a circle around vertices, 
+    #   not around the origin in the absence of vertices, we'd not need an if statement here. Then, 
+    #   if pushPoints() provides no points, no holes are cut.
+    if hole_count > 0:
+        result = (
+            result
+            # It's much easier to transform the workplane rather than creating a new one. Because for 
+            # a new workplane, z and x are initially aligned with respect to global coordinates, so the 
+            # coordinate system would have to be rotated for our needs, which is complex. Here we modify 
+            # the workplane to originate in the local bottom left corner of the bracket base shape.
+            .transformed(offset = (-width / 2, 0), rotate = (90,0,0))
+            .pushPoints(hole_coordinates(width, height, hole_count))
+            .circle(hole_diameter / 2)
+            .cutThruAll()
+        )
 
-        # Fillets and chamfers.
-        # The difficulty here is that we can't use normal CadQuery string selectors, as these always 
-        # refer to global directions, while inside this method we can only identify the direction 
-        # towards the bracket in our local coordinates. So we have to use the underlying selector 
-        # classes, and also convert from our local coordinates to the expected global ones manually.
-
+    # Fillets and chamfers.
+    # The difficulty here is that we can't use normal CadQuery string selectors, as these always 
+    # refer to global directions, while inside this method we can only identify the direction 
+    # towards the bracket in our local coordinates. So we have to use the underlying selector 
+    # classes, and also convert from our local coordinates to the expected global ones manually.
+    result = (
+        result
         # Add a fillet along the bracketed edge if desired.
         .faces(cqs.DirectionNthSelector(dir_max_y, -2))
         # As a bracket on the other side might be present, we have to filter the selected faces 
@@ -1338,6 +1347,7 @@ def bracket(self, thickness, height, width, offset = 0, angle = 90,
         )
         .chamfer_if(corner_chamfer is not None, corner_chamfer)
     )
+
     return result
 
 
