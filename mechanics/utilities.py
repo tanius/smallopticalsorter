@@ -7,9 +7,12 @@ from OCP.gp import gp_Pnt
 
 log = logging.getLogger(__name__)
 
-# todo: De-register the plugins after use by code here. Otherwise there can be hard-to-debug issues 
+# TODO: De-register the plugins after use by code here. Otherwise there can be hard-to-debug issues 
 #   as the plugin will still appear as registered for client code, and overwriting the registration 
 #   is not easily possible from there.
+# TODO: Switch from the pluginname_if() and optional_pluginnane() schemes of optional plugin 
+#   execution to pluginnname(if = condition, …). "if" would be an optional parameter. If necessary, 
+#   these plugins would overwrite default Workplane methods.
 
 # =============================================================================
 # Constants and variables
@@ -1618,6 +1621,57 @@ def test_shaft():
 #test_shaft()
 
 
+def nut_hole(self, size, length, rotation = None, condition = None):
+    if condition is not None and condition == False:
+        return self.newObject([self.findSolid()])
+
+    if rotation is None: rotation = 0
+
+    # polygon() requires the excircle diameter exd, which we have to calculate from nut size ns:
+    # (1) Nut size ns is twice the height h of the six equilateral triangles making up the 
+    # hexagon: ns = 2 * h
+    # (2) The height of the triangles is, with s the side length of the triangles, according 
+    # to https://math.stackexchange.com/a/1766919 : h = sqrt(3)/2 * s
+    # (3) Resolving (2) for s yields: s = 2 * h / sqrt(3)
+    # (4) Equation (1) in (3) yields: s = ns / sqrt(3)
+    # (5) Excircle diameter is twice the side length s in a regular polygon: exr = 2 * s
+    # (6) Equation (4) in (5) yields: exr = 2 * ns / sqrt(3)
+
+    # The cutting object must be created in a position prepare to be used by cutEach() below.
+    # Namely, in a local coordinate system, with the origin at the center top of the part.
+    nut = (
+        cq.Workplane("XY")
+        .polygon(6, 2 * size / sqrt(3))
+        .extrude(-length)
+        .rotate(axisStartPoint = (0.0, 0.0, -1.0), axisEndPoint = (0.0, 0.0, 1.0), angleDegrees = rotation)
+    )
+    #show_object(nut)
+    nut_solid = nut.findSolid()
+
+    # Use the cutter shape to cut at the position of every item on the stack.
+    return self.cutEach(lambda loc: nut_solid.moved(loc), useLocalCoords = True)
+
+
+def test_nut_hole():
+    cq.Workplane.nut_hole = nut_hole
+
+    result = (
+        cq.Workplane("XY")
+        .box(20, 20, 20)
+        
+        .faces(">Z").workplane()
+        .nut_hole(size = 10, length = 7, rotation = 15)
+
+        .faces(">Z").workplane()
+        .rect(15, 15, forConstruction = True)
+        .vertices()
+        .nut_hole(condition = 1<2, size = 3, length = 20)
+    )
+    show_object(result)
+
+#test_nut_hole()
+            
+
 def bolt_dummy(self, bolt_size, head_size, nut_size, 
     clamp_length, head_length, nut_length = 0, protruding_length = 0, head_shape = "round"
 ):
@@ -1639,7 +1693,6 @@ def bolt_dummy(self, bolt_size, head_size, nut_size,
             # (4) Equation (1) in (3) yields: s = ns / sqrt(3)
             # (5) Excircle diameter is twice the side length s in a regular polygon: exr = 2 * s
             # (6) Equation (4) in (5) yields: exr = 2 * ns / sqrt(3)
-            #return self.newObject(self.polygon(6, 2 * size / sqrt(3)).extrude(length).objects)
             return self.newObject(
                 self
                 .polygon(6, 2 * size / sqrt(3))

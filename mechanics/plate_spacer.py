@@ -18,12 +18,27 @@ class PlateSpacer:
         To be used pairwise. This plate guide is mounted to a parallel case wall. There is also 
         a variant mounted to orthogonal case walls – see PlateGuideBracket.
 
+        **3D printing hints**
+
+        – Print with the screw holes vertical. When using bolts with countersunk heads, holes printed 
+            that way are the most resistant against part splitting.
+        – Print with the ramp facing down. That way, you'll need support for the ramp, but no support for 
+            the edge fillet. The latter would not work well, as support for very low overhangs cannot be 
+            provided, leading to a not-very-round fillet.
+
         :param workplane: The CadQuery workplane to create this part on.
         :param measures: The measures to use for the parameters of this design. Expects a nested 
             [SimpleNamespace](https://docs.python.org/3/library/types.html#types.SimpleNamespace) 
             object, which may have the following attributes:
             - **``TODO``:** TODO
 
+        .. todo:: Merge PlateGuide into this design. Otherwise there is a lot of redundancy.
+        .. todo:: Make the part slightly longer so that the lower hole is also centered in the 
+            reinforcement rectangle that surrounds it on the outside. As a consequence, the 
+            PlateGuide part also has to be made longer to again have the same length.
+        .. todo:: Perhaps increase the width of the parts from 5 mm to 8 mm. That would bring the 
+            gaps left and right of the 180 mm wide sorter modules to 1 mm. Otherwise it's 2.5 mm, 
+            as the total inner case width is 370 mm.
         .. todo:: Once we have a way to cut bolts to custom lengths, embed the nut into the 
             spacer and run a custom length bolt through the case wall so that it ends just flush 
             with the spacer's surface. That way, all bolts go into the case, with no nuts visible 
@@ -170,7 +185,7 @@ head_to_surface = 1.0 # Intended depth of sinking the head below the surface of 
 counterbore_depth = head_to_surface + head_cylindrical_height - countersink_excess_depth
 
 measures = Measures(
-    # Type does not matter, as we create the part symmetrical so that it can be used on both sides.
+    # Type does not matter, as we create a symmetric part that can be used on both sides.
     type = "right", # Means right side of plate, not right side of case.
     width = 5.0,
     depth = 25.0,
@@ -214,8 +229,3 @@ show_options = {"color": "lightgray", "alpha": 0}
 
 plate_spacer = cq.Workplane("XY").part(PlateSpacer, measures)
 show_object(plate_spacer, name = "plate_spacer", options = show_options)
-
-# 3D printing hints:
-# Print with the ramp facing down. That way, you'll need support for the ramp, but no support for 
-# the edge fillet. The latter would not work well, as support for very low overhangs cannot be 
-# provided, leading to a not-very-round fillet.
