@@ -1622,6 +1622,14 @@ def test_shaft():
 
 
 def nut_hole(self, size, length, rotation = None, condition = None):
+    """
+    CadQuery plugin to cut a hole for inserting a hexagonal nut.
+
+    .. todo:: Rename "length" to "depth", since it's about the depth of a hole.
+    .. todo:: Make the (then called) depth parameter optional. If not given, the hole would go 
+        through the hole part. See the CadQuery cskHole() plugin for how to do that.
+    """
+
     if condition is not None and condition == False:
         return self.newObject([self.findSolid()])
 
@@ -1672,15 +1680,89 @@ def test_nut_hole():
 #test_nut_hole()
             
 
-def bolt_dummy(self, bolt_size, head_size, nut_size, 
-    clamp_length, head_length, nut_length = 0, protruding_length = 0, head_shape = "round"
+def bolt(self, bolt_size, head_size, nut_size, 
+    clamp_length, head_length, nut_length = 0, protruding_length = 0, 
+    head_shape = "round", head_angle = None
 ):
-    def bolthead(self, size, length, shape = "round"):
-        if shape == "round":
+    """
+    CadQuery plugin that provides a bolt shape including a nut, but without a thread. For mockups 
+    and to cut holes into parts for inserting parts later.
+
+    :param self: The CadQuery stack, with a workplane origin through which the bolt should go in 
+        z direction (i.e. orthogonal to the workplane) and so that half the ``clamp_length`` is 
+        above and half below this workplane.
+    :param bolt_size: TODO
+    :param head_size: TODO
+    :param nut_size: TODO
+    :param clamp_length: The cylindrical part of the bolt between bolt head and nut, or bolt end. 
+        The conical part of a countersunk bolt is not part of clamp_length but of head_length.
+    :param head_length: TODO
+    :param nut_length: TODO
+    :param protruding_length: TODO
+    :param head_shape: The type of bolt head to use. Either "round", "conical" (for a countersunk 
+        bolt) or "hexagonal".
+
+    .. todo:: Support 
+    .. todo:: Add rendering of threads, but optionally so that one can also still use the shape for 
+        cutting bolt holes or for simplified renderings.
+    """
+
+    def bolthead(self, size, length, shape = "hexagonal", angle = None, bolt_size = None):
+        """
+        A CadQuery plugin to generate a bolthead shape.
+
+        :param self: The CadQuery stack, with a workplane that represents the upper surface of the 
+            bolt to be created, with the positive Z axis pointing into the bolt direction.
+        :param size: The nut size (measure between flats) for a hexagonal bolt head, or the diamater 
+            for a cylindrical or conical bolt head.
+        :param length: Length of the bolt head. If a conical bolt head is desired and the length 
+            is longer than can be fit in a truncated cone with diameters ``size`` and ``bolt_size`` 
+            and tip angle ``angle``, then a part of the bolt head will be cylindrical.
+        :param shape: Shape of the bolt head. Can be "hexagonal", "cylindrical", "conical".
+        :param angle: Only needed for a conical bolt head. The head angle of a conical bolt, 
+            measured at the tip of the cone.
+        :param bolt_size: Only needed for a conical bolt head. The diameter of the bolt.
+        """
+
+        if shape == "cylindrical":
             return self.newObject(
                 self
                 .circle(size / 2)
                 .extrude(length)
+                .objects
+            )
+        elif shape == "conical":
+            taper_angle = angle / 2
+            # The length for the conical part of the extrusion is the height of a truncated cone, 
+            # with diameters "size" and "bolt_size". Which itself is the height difference of 
+            # a cone with diameter "size" and a cone with diameter "bolt_size". And for the cones, 
+            # we can substitute their cross-section triangles.
+            bolthead_cone_height = tan(radians(90 - taper_angle)) * size / 2
+            boltsize_cone_height = tan(radians(90 - taper_angle)) * bolt_size / 2
+            conical_length = bolthead_cone_height - boltsize_cone_height
+            # Length of a tapered extrusion is measured along the shape's tapered surface, not along 
+            # the extrusion direction. To get a part that measures "length" in extrusion direction, 
+            # we have to adapt length accordingly.
+            conical_length_for_extrude = conical_length / cos(radians(taper_angle))
+            cylindrical_length = length - conical_length
+            bolthead = (
+                self
+                .tag("top_plane")
+            )
+
+            if cylindrical_length > 0:
+                bolthead = (
+                    bolthead
+                    .circle(size / 2)
+                    .extrude(cylindrical_length)
+                    .workplaneFromTagged("top_plane")
+                    .workplane(offset = cylindrical_length)
+                )
+            
+            return self.newObject(
+                bolthead
+                .circle(size / 2)
+                .extrude(conical_length_for_extrude, taper = taper_angle) # taper angle is measured against the default, straight extrusion direction.
                 .objects
             )
         else:
@@ -1721,20 +1803,24 @@ def bolt_dummy(self, bolt_size, head_size, nut_size,
 
     bolt = (
         self
+        # Create the cylindrical bolt shape between head and nut.
         .circle(bolt_size / 2)
         .extrude(clamp_length / 2, both = True)
         # Create the bolt head.
-        #.faces(">Z").workplane()
-        .faces(cqs.DirectionMinMaxSelector(dir_max_z)).workplane()
-        .bolthead(head_size, head_length, head_shape)
-        # Create the bolt nut and bolt beyond the nut.
-        # With workplane(), a workplane will be created on the <Z face, with its normal aligned with 
-        # that face's normal, which is essential for the extrusion direction of what follows. Without 
-        # workplane(), the existing workplane will be moved to that face, not changing the normal.
-        #.faces("<Z").workplane()
-        .faces(cqs.DirectionMinMaxSelector(dir_min_z)).workplane()
+        .faces(cqs.DirectionMinMaxSelector(dir_max_z))
+        # Note that offset is negative because it has to use the already-inverted workplane.
+        .workplane(invert = True, offset = -head_length)
+        .bolthead(head_size, head_length, head_shape, head_angle, bolt_size)
+        # Create the bolt nut.
+        .faces(cqs.DirectionMinMaxSelector(dir_min_z))
+        # With workplane(), a workplane will be created on the selected face, with its normal 
+        # aligned with that face's normal, which is essential for the extrusion direction of what 
+        # follows. Without workplane(), something similar will be called internally, moving the 
+        # existing workplane to the selected face but WITHOUT changing the normal. That may be a bug.
+        # TODO: If the situation above is a bug, get it fixed in CadQuery.
+        .workplane()
         .nut_if(nut_size is not None and nut_length != 0, nut_size, nut_length)
-        #.faces("<Z")
+        # Create the bolt part protruding from the nut.
         .faces(cqs.DirectionMinMaxSelector(dir_min_z))
         .circle(bolt_size / 2)
         .extrude_if(protruding_length > 0, protruding_length)
@@ -1743,18 +1829,25 @@ def bolt_dummy(self, bolt_size, head_size, nut_size,
     return self.newObject(bolt.objects)
 
 
-def test_bolt_dummy():
-    cq.Workplane.bolt_dummy = bolt_dummy
+def test_bolt():
+    cq.Workplane.bolt = bolt
 
-    box = cq.Workplane("XY").box(24,24,24)
-    bolt = cq.Workplane("XZ").bolt_dummy(
-        bolt_size = 6, head_size = 9, nut_size = 9, clamp_length = 20, head_length = 4, 
-        nut_length = 4, protruding_length = 6, head_shape = "round"
+    box = cq.Workplane("XY").box(24, 24, 24)
+    bolt_shape = cq.Workplane("XZ").bolt(
+        bolt_size = 6, 
+        head_size = 14,
+        nut_size = 9, 
+        clamp_length = 20, 
+        head_length = 6,
+        nut_length = 4, 
+        protruding_length = 6, 
+        head_shape = "conical", # "cylindrical", "conical" or "hexagonal"
+        head_angle = 90
     )
-    show_object(bolt.translate((0,0,20)))
-    show_object(box.cut(bolt))
+    show_object(bolt_shape.translate((0,0,20)))
+    show_object(box.cut(bolt_shape))
 
-#test_bolt_dummy()
+#test_bolt()
 
 
 def distribute_circular(self, distributable, radius, copies, align):
@@ -1834,7 +1927,13 @@ def cbore_csk_hole(self, diameter, cboreDiameter, cboreDepth, cskDiameter, cskAn
         0 or None to drill thrugh the entire part.
     :param clean: Whether to call `Workplane::clean()` afterwards to have a clean shape.
 
-    .. todo:: Implement that this plugin can produce also pure counterbore holes or pure countersunk holes.
+    .. todo:: Rename to bolt_hole(), since that is what this plugin is about.
+    .. todo:: Implement that this plugin can produce also pure counterbore holes or pure countersunk 
+        holes.
+    .. todo:: Add the ability to also include a nut shape, starting from a certain depth and going 
+        until the end of the bolt because that's needed to insert the nut into the part.
+    .. todo:: Add the ability to als include a space for a washer below the nut, which means a 
+        cylindrical shape rather than a hexagonal one at the end of the bolt.
     """
 
     if depth is None:

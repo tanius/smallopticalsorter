@@ -24,6 +24,7 @@ class PlateGuide:
             object, which may have the following attributes:
             - **``TODO``:** TODO
 
+        .. todo:: Create small fillets around the edges that are plain 90° corners so far.
         .. todo:: Create a drill jig with left and right parts combined. A hot 3 mm drillbit 
             will be used with that to make holes into the case. Two versions are needed: one for 
             plates at the end, one for other plates. It should rest at the bottom of the box to 

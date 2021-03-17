@@ -157,8 +157,10 @@ class BoltMount:
             .hole(m.hole.diameter)
 
             # Cut the hex bolt head into the core part, from a workplane on the other side of the part.
+            # TODO: Use dummy_bolt() from utilities.py instead of cutting bolt and bolthead separately.
             .faces("<Y")
             .workplane(centerOption = "CenterOfBoundBox", invert = True, offset = m.block.depth)
+            # TODO: Use nut_hole() from utilities.py instead of polygon().
             .polygon(6, (m.hole.head_across_flats / 2) / cos(radians(30)) * 2)
             .cutBlind(-m.hole.head_depth)
         )
