@@ -22,8 +22,9 @@ class ShaftCoupling:
 
         **3D printing hints**
 
-        Print with the bolts in vertical position. This will need a bit of support material, but 
-        (1) the layers will now be printed so that they are flexed when clamping the bolt and 
+        Print at 100% infill as these couplings need quite some strength. PLA works, but PETG material 
+        is better. Print with the bolts in vertical position. This will need a bit of support material, 
+        but (1) the layers will now be printed so that they are flexed when clamping the bolt and 
         (2) there are circular shells around the bolthole, which is good to prevent part splitting 
         when using a countersunk bolt.
 
@@ -225,9 +226,11 @@ class ShaftCoupling:
             self.model = (
                 self.model
                 
+                # TODO: Instead of the code below, extrude the existing face by converting it into 
+                # a wire first. It is not yet clear how to do that, though.
                 .faces(">Z")
                 .workplane()
-                .circle(m.diameter / 2) # TODO: Try extruding the whole face instead.
+                .circle(m.diameter / 2)
                 .extrude(m.coupler.height + m.fillets)
                 
                 .faces(">Z")
@@ -243,11 +246,15 @@ class ShaftCoupling:
 # =============================================================================
 cq.Workplane.part = utilities.part
 
+# Measures for a low-profile stepper motor coupling with 5 mm round shaft. M3×20 countersunk bolts 
+# are fitting just inside the part outline. To achieve good clamping strength with just two bolts 
+# and without splitting the parts (even though using countersunk bolts), a large diameter is used.
+
 measures = Measures(
-    diameter = 22.0,
+    diameter = 25.0,
     base_height = 16.0,
-    clamp_gap = 1.0, # Enough, as measured decrease by clamping is 0.5 mm for a 20 mm diameter part.
-    fillets = 1.2, # Default for filleted edges, if nothing more specific is found in other parameters.
+    clamp_gap = 1.2, # Enough, as measured decrease by clamping is 0.5 mm for a 20 mm diameter part.
+    fillets = 1.25, # Default for filleted edges, if nothing more specific is found in other parameters.
     shaft = Measures(
         # Diameter for holes without a clamp. The shaft should be insertable easily, not creating 
         # any splitting force for the part. 5.3 is good for a shaft diameter of 5.0 mm.
@@ -261,12 +268,12 @@ measures = Measures(
         flatten = 0.0
     ),
     clamp = Measures(
-        style = "clip", # "clip" or "two parts"
+        style = "clip", # "clip" or (later) "two parts"
         groove_depth = 14.0
     ),
     bolt_holes = Measures(
-        clamp_length = 10.0, # The cylindrical section of the bolt between head and nut.
-        hole_size = 3.2,
+        clamp_length = 14.5, # The cylindrical section of the bolt between head and nut.
+        hole_size = 3.2, # Good for M3 and some printer artefacts.
         nuthole_size = 5.8, # 5.4 mm for a M3 nut, 0.4 mm for easy inserting. Corrected from 0.2.
         headhole_size = 6.3, # 6.1 for a DIN 7991 M3 countersunk bolt head, 0.2 for easy assembly.
         head_angle = 90, # DIN 7991 countersunk bolt. Cone tip angle. Omit to use a bolt with cylindrical head.
@@ -274,18 +281,18 @@ measures = Measures(
         # Moving the bolts towards the center like here can help to compensate that in its default 
         # position there is more material around a bolt towards the center. We better distribute 
         # that material to prevent part splitting equally well on all sides.
-        radial_offset = -1.5,
+        radial_offset = -2.25,
         # Manual offset from default position near the end of the clamping groove.
         vertical_offset = 2.0,
         # Manual offset from default position in the depth direction. Bolt direction is positive.
-        #   The default is to position the bolt so that half the bolt's cylindrical part between 
+        #  The default is to position the bolt so that half the bolt's cylindrical part between 
         # head and nut (see clamp_length) is half above and half below the workplane. You can adjust 
         # this to hide both nut and bolt head just inside the coupling outline.
-        #   The right value for M3 bolts is to keep 0.35 mm of cylindrical hole depth at the inlet of 
+        #  The right value for M3 bolts is to keep 0.35 mm of cylindrical hole depth at the inlet of 
         # the bolt hole (measured where the wall height is lowest). Not more, as this guarantees 
         # that the bolt head is only just inside the part outline. This applies when a M3 hole is 
         # configured for countersunk bolts using headhole_size = 6.3, head_angle = 90.
-        depth_offset = -0.15
+        depth_offset = -0.1
     ),
     coupler = Measures(
         # Coupling with a hexagonal drive profile for M5 hex bolts.
@@ -293,8 +300,8 @@ measures = Measures(
         # short, interlocking with a hex bolt like this is preferable to a spider coupling. Also, 
         # it is one part less to 3D print, as this coupling type needs simply a bolt as counterpart.
         style = "hexagonal",
-        height = 3.5,
-        size = 8.4, # 8 mm wrench size, 0.4 mm for coupler play and easy inserting.
+        height = 3.5, # Excludes filleted height added automatically on top.
+        size = 8.4, # 8.0 mm wrench size, 0.4 mm for coupler play and easy inserting.
 
         # Example for a spider coupling. Suitably sized for NEMA17 stepper motors.
         # style = "spider", # "spider" / "hexagonal"
