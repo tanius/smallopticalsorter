@@ -1192,15 +1192,17 @@ def bracket(self, thickness, height, width, offset = 0, angle = 90,
     x axis pointing along the edge along which to build the bracket and (4) has its y axis pointing 
     away from the center of the face on which to build the bracket.
 
+    The holes are arranged as a line along the longer edge of the bracket.
+
     :param …: TODO
 
-    .. todo:: Support to create only one hole in the bracket. Currently this results in "division 
-        by float zero". However, with offset = 0 sometimes just a single hole is created.
-    .. todo:: Fix that the offset parameter does not work as expected. It will add the hole offset 
-        only from one edge, not both.
-    .. todo:: Change the edge filleting so that it is done before cutting the holes, and so that 
-        the holes are only cut into the non-filleted space. Otherwise the OCCT will often refuse, 
-        as the fillet would interfere with an existing hole.
+    .. todo:: Allow to provide a plugin callback or lambda for cutting the holes, as otherwise 
+        the hole cutting code would have to cover all cases (nuts, countersunk holes etc.) and that 
+        kind of code would be duplicated in other plugins as well.
+    .. todo:: Adjust the parameter naming to width, depth and height (or thickness). Because the 
+        default plane of parts should be XY.
+    .. todo:: Add a parameter to support filleting the outer edges, excluding the edges touching 
+        the mounting face and edges of holes.
     .. todo:: Allow to specify fillets as "0", which should be converted to "None" in the constructor.
     .. todo:: Reimplement hole_coordinates() using Workplane::rarray(), see 
         https://cadquery.readthedocs.io/en/latest/classreference.html#cadquery.Workplane.rarray
@@ -1211,8 +1213,6 @@ def bracket(self, thickness, height, width, offset = 0, angle = 90,
     .. todo:: Make it possible to pass in two different lengths for the chamfer. That will allow 
         to create a better support of the core below it, where needed.
     .. todo:: Implement behavior for the angle parameter.
-    .. todo:: Fix that the automatic hole positioning algorithm in hole_coordinates() does not work 
-        well when the bracket's footprint is approaching square shape, or higher than wide.
     .. todo:: Let this plugin determine its workplane by itself from the edge and face provided as 
         the top and second from top stack elements when called. That is however difficult because 
         the workplane has to be rotated so that the y axis points away from the center of the face 
@@ -1228,19 +1228,34 @@ def bracket(self, thickness, height, width, offset = 0, angle = 90,
     """
 
     def hole_coordinates(width, height, hole_count):
-        v_offset = height / 2
-        h_offset = width / 2 if hole_count == 1 else v_offset
-        h_spacing = 0 if hole_count == 1 else (width - 2 * offset) / (hole_count - 1)
-        points = []
+        line_length = max(width, height) # Arrange holes in a line along the longer edge.
+        # TODO: Make the following two values configurable by a parameter to the plugin and this function.
+        hole_hole_distance_factor = 1
+        hole_edge_distance_factor = 0.5
+        # Example: 5 holes have 4 spaces between them, 1 edge space before and 1 after them.
+        distance_count = hole_hole_distance_factor * (hole_count - 1) + hole_edge_distance_factor * 2
+        distance_unit = line_length / distance_count
+        hole_hole_distance = hole_hole_distance_factor * distance_unit
+        hole_edge_distance = hole_edge_distance_factor * distance_unit
+        second_dimension_position = min(width, height) / 2
 
         # Go row-wise through all points from bottom to top and collect their coordinates.
         # (Origin is assumed in the lower left of the part's back surface.)
-        for column in range(hole_count):
-            points.append((
-                h_offset + column * h_spacing,
-                v_offset
-            ))
-
+        points = []
+        for column in range(hole_count): # range is 0 ... hole_count -1.
+            # Points to be arranged along the width edge.
+            if width > height:
+                points.append((
+                    hole_edge_distance + column * hole_hole_distance,
+                    second_dimension_position
+                ))
+            # Points to be arranged along the height edge.
+            else:
+                points.append((
+                    second_dimension_position,
+                    hole_edge_distance + column * hole_hole_distance
+                ))
+                
         log.info("hole coordinates = %s", points)
         return points
 
@@ -1293,23 +1308,6 @@ def bracket(self, thickness, height, width, offset = 0, angle = 90,
         )
     )
 
-    # Cut the hole pattern into the bracket.
-    # TODO: If we had a circle_for_vertices() plugin that would only create a circle around vertices, 
-    #   not around the origin in the absence of vertices, we'd not need an if statement here. Then, 
-    #   if pushPoints() provides no points, no holes are cut.
-    if hole_count > 0:
-        result = (
-            result
-            # It's much easier to transform the workplane rather than creating a new one. Because for 
-            # a new workplane, z and x are initially aligned with respect to global coordinates, so the 
-            # coordinate system would have to be rotated for our needs, which is complex. Here we modify 
-            # the workplane to originate in the local bottom left corner of the bracket base shape.
-            .transformed(offset = (-width / 2, 0), rotate = (90,0,0))
-            .pushPoints(hole_coordinates(width, height, hole_count))
-            .circle(hole_diameter / 2)
-            .cutThruAll()
-        )
-
     # Fillets and chamfers.
     # The difficulty here is that we can't use normal CadQuery string selectors, as these always 
     # refer to global directions, while inside this method we can only identify the direction 
@@ -1351,6 +1349,26 @@ def bracket(self, thickness, height, width, offset = 0, angle = 90,
         .chamfer_if(corner_chamfer is not None, corner_chamfer)
     )
 
+    # Cut the hole pattern into the bracket.
+    # Done last, as sometimes the holes might have to go through the main fillet added above. Also 
+    # this order prevents CAD kernel issues, as OCCT cannot create a fillet that partially overlaps 
+    # an existing hole.
+    # TODO: If we had a circle_for_vertices() plugin that would only create a circle around vertices, 
+    #   not around the origin in the absence of vertices, we'd not need an if statement here. Then, 
+    #   if pushPoints() provides no points, no holes are cut.
+    if hole_count > 0:
+        result = (
+            result
+            # It's much easier to transform the workplane rather than creating a new one. Because for 
+            # a new workplane, z and x are initially aligned with respect to global coordinates, so the 
+            # coordinate system would have to be rotated for our needs, which is complex. Here we modify 
+            # the workplane to originate in the local bottom left corner of the bracket base shape.
+            .transformed(offset = (-width / 2, 0), rotate = (90,0,0))
+            .pushPoints(hole_coordinates(width, height, hole_count))
+            .circle(hole_diameter / 2)
+            .cutThruAll()
+        )
+
     return result
 
 
@@ -1382,7 +1400,8 @@ def test_bracket():
         #.faces("<X").edges(">Z").transformedWorkplane(centerOption = "CenterOfMass", rotate_z = 0)
 
         .bracket(
-            thickness = 1, height = 5, width = 10, 
+            thickness = 1, 
+            height = 10, width = 5, # Also to test: height = 5, width = 10,
             hole_count = 2, hole_diameter = 1,
             edge_fillet = 1.2,
             corner_fillet = 1.2
@@ -1398,7 +1417,7 @@ def test_bracket():
     )
     show_object(result)
 
-#test_bracket()
+# test_bracket()
 
 
 def first_solid(self):
