@@ -1,6 +1,8 @@
 import cadquery as cq
 import cadquery.selectors as cqs
 from math import sqrt, pi, sin, cos, tan, radians, degrees
+from random import randrange
+from typing import cast, List
 import logging
 from types import SimpleNamespace
 from OCP.gp import gp_Pnt
@@ -1115,6 +1117,19 @@ def test_extrude_if():
 #test_extrude_if()
 
 
+def tag_if(self, condition, name):
+    """
+    Tag the current state of the stack if a condition matches; do noting otherwise.
+
+    :param condition: The condition to determine if to execute the tagging operation.
+    :param name: The name to use for the tagging.
+    """
+    if condition:
+        return self.tag(name)
+    else:
+        return self.newObject([self.findSolid()])
+
+
 def show_local_axes(self, length = 20):
     """
     A CadQuery plugin to visualize the local coordinate system as a help for debugging.
@@ -1180,9 +1195,62 @@ def test_show_local_axes():
 # test_show_local_axes()
 
 
+def pushVertices(self, pntList):
+    """
+    Pushes a list of points onto the stack as Vertex objects.
+    The points are in the 2D coordinate space of the workplane face.
+
+    :param pntList: a list of points to push onto the stack
+    :type pntList: list of 2-tuples of float, in *local* coordinates
+    :return: a new workplane with the desired points on the stack as Vertex objects
+
+    A common use is to provide a list of points for a subsequent operation, such as creating
+    circles or holes. This example creates a cube, and then drills three holes through it,
+    based on three points::
+
+        s = Workplane().box(1,1,1).faces(">Z").workplane().\
+            pushPoints([(-0.3,0.3),(0.3,0.3),(0,0)])
+        body = s.circle(0.05).cutThruAll()
+
+    Here the circle function operates on all three points, and is then extruded to create three
+    holes. See :py:meth:`circle` for how it works.
+    """
+    vecs: List[cq.Vertex] = []
+
+    for pnt in pntList:
+        pnt_vector = self.plane.toWorldCoords(pnt)
+
+        vecs.append(
+            cq.Vertex.makeVertex(pnt_vector.x, pnt_vector.y, pnt_vector.z)
+        )
+
+    return self.newObject(vecs)
+
+
+def first_solid(self):
+    return self.newObject([self.findSolid()])
+
+
+def test_first_solid():
+    cq.Workplane.first_solid = first_solid
+
+    result = (
+        cq.Workplane("XY")
+        .box(10,10,5)
+        .faces(">Z")
+        .workplane()
+        .first_solid()
+        .faces("<Z")
+    )
+    show_object(result)
+
+#test_first_solid()
+
+
 def bracket(self, thickness, height, width, offset = 0, angle = 90,
-    hole_count = 0, hole_diameter = None, 
-    edge_fillet = None, edge_chamfer = None, corner_fillet = None, corner_chamfer = None
+    holes_count = 0, holes_diameter = None, holes_tag = None,
+    edge_fillet = None, edge_chamfer = None, 
+    corner_fillet = None, corner_chamfer = None
 ):
     """
     A CadQuery plugin to create an angle bracket along an edge.
@@ -1194,11 +1262,21 @@ def bracket(self, thickness, height, width, offset = 0, angle = 90,
 
     The holes are arranged as a line along the longer edge of the bracket.
 
+    :param holes_diameter: The diameter to use for the holes in the bracket. When setting 
+        ``holes_count`` to a non-zero value but not specifying holes_diameter, no holes will be 
+        drilled but there will be vertices on the stack so that you can drill them yourself later. 
+        See parameter ``holes_tag``.
+    :param holes_tag: Name to give to the state where the vertices are on the stack as Vertex 
+        objects. Can be used to cut the holes again after they have been obstructed by items created 
+        after the bracket. Or to cut more custom holes than the plain cylindrical holes created 
+        by this plugin. For that, you can select the vertices by tag like this:
+        ``result.vertices(tag = holes_tag)``.
     :param …: TODO
 
-    .. todo:: Allow to provide a plugin callback or lambda for cutting the holes, as otherwise 
-        the hole cutting code would have to cover all cases (nuts, countersunk holes etc.) and that 
-        kind of code would be duplicated in other plugins as well.
+    .. todo:: Change the specs for the workplane to provide for this plugin to one on which the 
+        thickness (after refactoring: height) parameter goes into the z direction. That is also 
+        the workplane for the holes in the bracket, which makes it much easier to tag and reuse 
+        a workplane for cutting holes externally, after creating the bracket.
     .. todo:: Adjust the parameter naming to width, depth and height (or thickness). Because the 
         default plane of parts should be XY.
     .. todo:: Add a parameter to support filleting the outer edges, excluding the edges touching 
@@ -1262,7 +1340,10 @@ def bracket(self, thickness, height, width, offset = 0, angle = 90,
     cq.Workplane.translate_last = translate_last
     cq.Workplane.fillet_if = fillet_if
     cq.Workplane.chamfer_if = chamfer_if
+    cq.Workplane.tag_if = tag_if
     cq.Workplane.show_local_axes = show_local_axes
+    cq.Workplane.pushVertices = pushVertices
+    cq.Workplane.first_solid = first_solid
 
     # todo: Raise an argument error if both edge_fillet and edge_chamfer is given.
     # todo: Raise an argument error if both corner_fillet and corner_chamfer is given.
@@ -1276,6 +1357,11 @@ def bracket(self, thickness, height, width, offset = 0, angle = 90,
     # Determine the CadQuery primitive "Plane" object wrapped by the Workplane object. See: 
     # https://cadquery.readthedocs.io/en/latest/_modules/cadquery/cq.html#Workplane
     plane = result.plane
+
+    # Create a random holes tag name if none was supplied, as we'll need it also internally in this 
+    # method.
+    holes_tag_randomness = randrange(100000)
+    holes_tag = holes_tag if holes_tag is not None else f"bracket_holes_{holes_tag_randomness}"
 
     # Calculate various local directions as Vector objects using global coordinates.
     # 
@@ -1349,23 +1435,33 @@ def bracket(self, thickness, height, width, offset = 0, angle = 90,
         .chamfer_if(corner_chamfer is not None, corner_chamfer)
     )
 
-    # Cut the hole pattern into the bracket.
-    # Done last, as sometimes the holes might have to go through the main fillet added above. Also 
-    # this order prevents CAD kernel issues, as OCCT cannot create a fillet that partially overlaps 
-    # an existing hole.
-    # TODO: If we had a circle_for_vertices() plugin that would only create a circle around vertices, 
-    #   not around the origin in the absence of vertices, we'd not need an if statement here. Then, 
-    #   if pushPoints() provides no points, no holes are cut.
-    if hole_count > 0:
+    # Add the hole pattern as tagged Vertex objects.
+    if holes_count > 0:
         result = (
             result
             # It's much easier to transform the workplane rather than creating a new one. Because for 
             # a new workplane, z and x are initially aligned with respect to global coordinates, so the 
             # coordinate system would have to be rotated for our needs, which is complex. Here we modify 
             # the workplane to originate in the local bottom left corner of the bracket base shape.
-            .transformed(offset = (-width / 2, 0), rotate = (90,0,0))
-            .pushPoints(hole_coordinates(width, height, hole_count))
-            .circle(hole_diameter / 2)
+            .transformed(offset = (-width / 2, 0), rotate = (90, 0, 0))
+            .pushVertices(hole_coordinates(width, height, holes_count))
+            .tag_if(holes_tag is not None, holes_tag)
+            .first_solid()
+        )
+
+    # Cut the hole pattern into the object, if desired.
+    # Done last, as sometimes the holes might have to go through the main fillet added above. Also 
+    # this order prevents CAD kernel issues, as OCCT cannot create a fillet that partially overlaps 
+    # an existing hole.
+    # TODO: If we had a circle_for_vertices() plugin that would only create a circle around vertices, 
+    #   not around the origin in the absence of vertices, we'd not need an if statement here. Then, 
+    #   if pushPoints() provides no points, no holes are cut. However, it is not yet clear if 
+    #   cutThruAll() would indeed do nothing when no wire is in pendingWires.
+    if holes_diameter is not None and holes_diameter > 0:
+        result = (
+            result
+            .vertices(tag = holes_tag)
+            .circle(holes_diameter / 2)
             .cutThruAll()
         )
 
@@ -1402,7 +1498,7 @@ def test_bracket():
         .bracket(
             thickness = 1, 
             height = 10, width = 5, # Also to test: height = 5, width = 10,
-            hole_count = 2, hole_diameter = 1,
+            holes_count = 2, holes_diameter = None, holes_tag = "bracket_hole_points_1",
             edge_fillet = 1.2,
             corner_fillet = 1.2
         )
@@ -1410,34 +1506,16 @@ def test_bracket():
         .faces("<Z").edges(">Y").transformedWorkplane(centerOption = "CenterOfMass", rotate_z = 180)
         .bracket(
             thickness = 1, height = 5, width = 10, 
-            hole_count = 2, hole_diameter = 1,
+            holes_count = 2, holes_diameter = 1, holes_tag = "bracket_hole_points_2",
             edge_fillet = 1.2,
             corner_fillet = 1.2
         )
     )
-    show_object(result)
+    show_object(result, name = "bracket")
+    show_object(result.vertices(tag = "bracket_hole_points_1"), name = "bracket_hole_points_1")
+    show_object(result.vertices(tag = "bracket_hole_points_2"), name = "bracket_hole_points_2")
 
-# test_bracket()
-
-
-def first_solid(self):
-    return self.newObject([self.findSolid()])
-
-
-def test_first_solid():
-    cq.Workplane.first_solid = first_solid
-
-    result = (
-        cq.Workplane("XY")
-        .box(10,10,5)
-        .faces(">Z")
-        .workplane()
-        .first_solid()
-        .faces("<Z")
-    )
-    show_object(result)
-
-#test_first_solid()
+#test_bracket()
 
 
 def angle_sector(self, radius, start_angle, stop_angle, forConstruction = False):
@@ -1701,7 +1779,7 @@ def test_nut_hole():
 
 def bolt(self, bolt_size, head_size, nut_size, 
     clamp_length, head_length, nut_length = 0, protruding_length = 0, 
-    head_shape = "round", head_angle = None
+    head_shape = "cylindrical", head_angle = None
 ):
     """
     CadQuery plugin that provides a bolt shape including a nut, but without a thread. For mockups 
@@ -1718,10 +1796,11 @@ def bolt(self, bolt_size, head_size, nut_size,
     :param head_length: TODO
     :param nut_length: TODO
     :param protruding_length: TODO
-    :param head_shape: The type of bolt head to use. Either "round", "conical" (for a countersunk 
+    :param head_shape: The type of bolt head to use. Either "cylindrical", "conical" (for a countersunk 
         bolt) or "hexagonal".
 
-    .. todo:: Support 
+    .. todo:: Allow specifying head_length = 0 to create a bolt without a head, for example to cut 
+        a cylindrical hole with added nut hole.
     .. todo:: Add rendering of threads, but optionally so that one can also still use the shape for 
         cutting bolt holes or for simplified renderings.
     """
@@ -2005,3 +2084,169 @@ def test_cbore_csk_hole():
     show_object(result)
 
 #test_cbore_csk_hole()
+
+
+def eachpointAdaptive(
+    self,
+    callback,
+    callback_extra_args = None,
+    useLocalCoords = False
+):
+    """
+    Same as each(), except each item on the stack is converted into a point before it
+    is passed into the callback function. And it also allows to pass in lists of additional 
+    arguments to use for each of the objects to process.
+
+    The resulting object has a point on the stack for each object on the original stack.
+    Vertices and points remain a point.  Faces, Wires, Solids, Edges, and Shells are converted
+    to a point by using their center of mass.
+
+    If the stack has zero length, a single point is returned, which is the center of the current
+    workplane/coordinate system
+
+    :param callback_extra_args: Array of dicts for keyword arguments that will be 
+        provided to the callback in addition to the obligatory location argument. The outer array 
+        level is indexed by the objects on the stack to iterate over, in the order they appear in 
+        the Workplane.objects attribute. The inner arrays are dicts of keyword arguments, each dict 
+        for one call of the callback function each. If a single dict is provided, then this set of 
+        keyword arguments is used for every call of the callback.
+    :param useLocalCoords: Should points provided to the callback be in local or global coordinates.
+
+    :return: CadQuery object which contains a list of vectors (points) on its stack.
+
+    .. todo:: Implement that callback_extra_args can also be a single dict.
+    .. todo:: Implement that empty dicts are used as arguments for calls to the callback if not 
+        enough sets are provided for all objects on the stack.
+    """
+
+    # Convert the objects on the stack to a list of points.
+    pnts = []
+    plane = self.plane
+    loc = self.plane.location
+    if len(self.objects) == 0:
+        # When nothing is on the stack, use the workplane origin point.
+        pnts.append(cq.Location())
+    else:
+        for o in self.objects:
+            if isinstance(o, (cq.Vector, cq.Shape)):
+                pnts.append(loc.inverse * cq.Location(plane, o.Center()))
+            else:
+                pnts.append(o)
+
+    # If no extra keyword arguments are provided to the callback, provide a list of empty dicts as 
+    # structure for the **() deferencing to work below without issues.
+    if callback_extra_args is None:
+        callback_extra_args = [{} for p in pnts]
+
+    # Call the callback for each point and collect the objects it generates with each call.
+    res = []
+    for i, p in enumerate(pnts):
+        p = (p * loc) if useLocalCoords == False else p
+        extra_args = callback_extra_args[i]
+        p_res = callback(p, **extra_args)
+        p_res = p_res.move(loc) if useLocalCoords == True else p_res
+        res.append(p_res)
+
+    # For result objects that are wires, make them pending if necessary.
+    for r in res:
+        if isinstance(r, cq.Wire) and not r.forConstruction:
+            self._addPendingWire(r)
+
+    return self.newObject(res)
+
+
+def test_eachpointAdaptive():
+    cq.Workplane.eachpointAdaptive = eachpointAdaptive
+
+    def coin(location, size):
+        """
+        Create a coin at the given location, with the given size. Suitable as a callback for 
+        Workplane::eachpointAdaptive().
+        :param location: A cq.Location object defining where to place the center of the coin.
+        :param size: A float defining the diameter of the coin.
+        """
+        return cq.Workplane().circle(size / 2).extrude(-size / 8).val().located(location)
+
+    result = (
+        cq.Workplane()
+        .workplane(offset = 10)
+        .pushPoints([(0, 0), (-2, -5), (10, 10)])
+        .eachpointAdaptive(
+            coin,
+            callback_extra_args = [{"size": 1}, {"size": 5}, {"size": 8}],
+            useLocalCoords = False
+        )
+    )
+
+    show_object(result)
+
+# test_eachpointAdaptive()
+
+
+def cutEachAdaptive(
+    self, 
+    callback, 
+    callback_extra_args,
+    useLocalCoords = False, 
+    clean = True
+):
+    """
+    Evaluates the provided function at each point on the stack (using ``eachpoint()``) and then cuts 
+    the result from the context solid. In contrast to the normal Workplane::cutEach(), it allows 
+    to provide additional arguments to the callback.
+
+    :param callback: A function suitable for use in the eachpoint method: ie, that accepts a 
+        Vector object as first parameter, 
+    :param useLocalCoords: same as for :py:meth:`eachpoint`
+    :param boolean clean: call :py:meth:`clean` afterwards to have a clean shape
+    :raises ValueError: if no solids or compounds are found in the stack or parent chain
+    :return: a CQ object that contains the resulting solid
+    """
+    cq.Workplane.eachpointAdaptive = eachpointAdaptive
+
+    context_solid = self.findSolid()
+
+    # Combine all cutter objects into a single compound object.
+    results = cast(
+        List[cq.Shape], 
+        self.eachpointAdaptive(
+            callback,
+            callback_extra_args,
+            useLocalCoords
+        ).vals()
+    )
+
+    new_solid = context_solid.cut(*results)
+    if clean: new_solid = new_solid.clean()
+
+    return self.newObject([new_solid])
+
+
+def test_cutEachAdaptive():
+    cq.Workplane.cutEachAdaptive = cutEachAdaptive
+
+    def cylinder_at(location, diameter, height):
+        """
+        Create a cylinder at the given location, with the given size. Suitable as a callback for 
+        Workplane::eachpointAdaptive().
+        :param location: A cq.Location object defining where to place the center of the coin.
+        :param diameter: A float defining the diameter of the cylinder.
+        :param height: A float defining the heigt of the cylinder.
+        """
+        return cq.Workplane().circle(diameter / 2).extrude(-height).val().located(location)
+
+    result = (
+        cq.Workplane()
+        .box(30, 30, 5)
+        .translate((0, 0, -2.5))
+        .pushPoints([(0, 0), (-2, -5), (10, 10)])
+        .cutEachAdaptive(
+            cylinder_at,
+            callback_extra_args = [{"diameter": 1, "height": 10}, {"diameter": 5, "height": 4}, {"diameter": 8, "height": 10}],
+            useLocalCoords = False
+        )
+    )
+
+    show_object(result)
+
+# test_cutEachAdaptive()
