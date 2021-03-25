@@ -10,11 +10,11 @@ importlib.reload(utilities)
 log = logging.getLogger(__name__)
 
 
-class MotorMount:
+class MotorHMount:
 
     def __init__(self, workplane, measures):
         """
-        A parametric stepper motor mount.
+        A parametric stepper motor mount where the motor axis is mounted horizontally.
 
         :param workplane: The CadQuery workplane to create this part on.
         :param measures: The measures to use for the parameters of this design. Expects a nested 
@@ -203,5 +203,5 @@ measures = Measures(
 )
 show_options = {"color": "lightgray", "alpha": 0}
 
-motor_mount = cq.Workplane("XY").part(MotorMount, measures)
-show_object(motor_mount, name = "motor_mount", options = show_options)
+motor_h_mount = cq.Workplane("XY").part(MotorHMount, measures)
+show_object(motor_h_mount, name = "motor_h_mount", options = show_options)
