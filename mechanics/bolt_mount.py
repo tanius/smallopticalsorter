@@ -83,8 +83,8 @@ class BoltMount:
                     thickness = m.brackets.thickness, 
                     height = m.brackets.height,
                     width = m.block.width,
-                    hole_count = m.brackets.hole_count, 
-                    hole_diameter = m.brackets.hole_diameter,
+                    holes_count = m.brackets.hole_count, 
+                    holes_diameter = m.brackets.hole_diameter,
                     edge_fillet = m.brackets.fillet_radius,
                     corner_fillet = min(m.block.width, m.brackets.height) / 4
                 )
@@ -98,8 +98,8 @@ class BoltMount:
                     thickness = m.brackets.thickness,
                     height = m.brackets.height,
                     width = m.block.width,
-                    hole_count = m.brackets.hole_count,
-                    hole_diameter = m.brackets.hole_diameter,
+                    holes_count = m.brackets.hole_count,
+                    holes_diameter = m.brackets.hole_diameter,
                     edge_fillet = m.brackets.fillet_radius,
                     corner_fillet = min(m.block.width, m.brackets.height) / 4
                 )
@@ -134,8 +134,8 @@ class BoltMount:
                     thickness = m.brackets.thickness,
                     height = m.brackets.height,
                     width = m.block.height,
-                    hole_count = m.brackets.hole_count,
-                    hole_diameter = m.brackets.hole_diameter,
+                    holes_count = m.brackets.hole_count,
+                    holes_diameter = m.brackets.hole_diameter,
                     # See the creation of the left bracket why we have to deduct 0.01.
                     edge_fillet = m.brackets.fillet_radius - 0.01,
                     corner_fillet = min(m.block.width, m.brackets.height) / 4

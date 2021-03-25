@@ -237,7 +237,8 @@ class ShaftCoupling:
                 .workplane()
                 .nut_hole(size = m.coupler.size, length = m.coupler.height + m.fillets)
 
-                .edges(">Z").fillet(m.fillets)
+                .edges(">Z")
+                .fillet(m.fillets)
             )
 
 
